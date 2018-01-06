@@ -5,9 +5,8 @@
 # 1572: unreliability of floating-point equality
 # 2547: dual specification as both system and non-system include directory
 
-ICPC_OPTIMIZATION_FLAGS="-std=c++11 -fast -use-intel-optimized-headers \
--no-inline-max-size -no-inline-max-total-size -no-inline-min-size"
-
+ICPC_OPTIMIZATION_FLAGS="-fast -use-intel-optimized-headers \
+-no-inline-max-size -no-inline-max-total-size -no-inline-min-size -g"
 ICPC_WARNING_FLAGS="-Wall -Werror -w3 -wd981,1572,2547"
 
 ICPC_PLATFORM_FLAGS="-march=native -mtune=native"
