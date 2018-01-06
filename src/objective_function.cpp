@@ -266,7 +266,7 @@ static inline void resm(mpfr_t f, mpfr_t tmp, std::size_t n,
     mpfr_fma(f, tmp, tmp, f, rnd);
 }
 
-#include "gen/RK_10_16.inc"
+#include "gen/RK_10_16.ipp"
 
 void objective_gradient(double *__restrict__ dst, std::size_t n,
                         const double *__restrict__ x) {
