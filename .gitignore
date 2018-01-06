@@ -1,0 +1,7 @@
+/bin/
+/obj/
+/data/
+/cmake-build-debug/
+/CMakeLists.txt
+/src/legacy_c/
+/src/legacy_cpp/
