@@ -2,9 +2,9 @@
 #define RKTOOLS_OBJECTIVE_FUNCTION_HPP
 
 // C++ standard library headers
-#include <cstddef>
+#include <cstddef> // for std::size_t
 
-// GNU MPFR library header
+// GNU MPFR library headers
 #include <mpfr.h>
 
 #define NUM_VARS 136

@@ -1,5 +1,8 @@
-#ifndef RKTK_BFGS_SUBROUTINES_HPP
-#define RKTK_BFGS_SUBROUTINES_HPP
+#ifndef RKTK_BFGS_SUBROUTINES_HPP_INCLUDED
+#define RKTK_BFGS_SUBROUTINES_HPP_INCLUDED
+
+// C++ standard library headers
+#include <cstddef> // for std::size_t
 
 // GNU MPFR library header
 #include <mpfr.h>
@@ -26,4 +29,4 @@ void update_inverse_hessian(mpfr_t *inv_hess, std::size_t n,
                             mpfr_t step_size, mpfr_t *step_direction,
                             mpfr_prec_t prec, mpfr_rnd_t rnd);
 
-#endif // RKTK_BFGS_SUBROUTINES_HPP
+#endif // RKTK_BFGS_SUBROUTINES_HPP_INCLUDED
