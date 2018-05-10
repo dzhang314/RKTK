@@ -25,9 +25,9 @@
 static inline bool is_dec_digit(char c) { return ('0' <= c) && (c <= '9'); }
 
 static inline bool is_hex_digit(char c) {
-    return ('0' <= c) && (c <= '9')
-           || ('a' <= c) && (c <= 'f')
-           || ('A' <= c) && (c <= 'F');
+    return (('0' <= c) && (c <= '9'))
+           || (('a' <= c) && (c <= 'f'))
+           || (('A' <= c) && (c <= 'F'));
 }
 
 static inline bool is_dec_substr(const std::string &str,

@@ -12,7 +12,8 @@ static inline mpfr_prec_t get_precision(int argc, char **argv) {
     if (argc >= 2) {
         char *end;
         const long long precision = std::strtoll(argv[1], &end, 10);
-        const bool read_whole_arg = (std::strlen(argv[1]) == end - argv[1]);
+        const bool read_whole_arg = (std::strlen(argv[1]) ==
+                static_cast<std::size_t>(end - argv[1]));
         const bool is_positive = (precision > 0);
         const bool in_range = (precision <= INT_MAX);
         if (read_whole_arg && is_positive && in_range) {
@@ -26,7 +27,8 @@ static inline double get_print_period(int argc, char **argv) {
     if (argc >= 3) {
         char *end;
         const double print_period = std::strtod(argv[2], &end);
-        const bool read_whole_arg = (std::strlen(argv[2]) == end - argv[2]);
+        const bool read_whole_arg = (std::strlen(argv[2]) ==
+                static_cast<std::size_t>(end - argv[2]));
         const bool is_finite = std::isfinite(print_period);
         const bool is_positive = (print_period >= 0.0);
         if (read_whole_arg && is_finite && is_positive) {
@@ -40,7 +42,8 @@ static inline int get_print_precision(int argc, char **argv) {
     if (argc >= 4) {
         char *end;
         const long long print_precision = std::strtoll(argv[3], &end, 10);
-        const bool read_whole_arg = (std::strlen(argv[3]) == end - argv[3]);
+        const bool read_whole_arg = (std::strlen(argv[3]) ==
+                static_cast<std::size_t>(end - argv[3]));
         const bool is_non_negative = (print_precision >= 0);
         const bool in_range = (print_precision <= INT_MAX);
         if (read_whole_arg && is_non_negative && in_range) {
