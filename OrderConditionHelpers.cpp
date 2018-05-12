@@ -26,6 +26,7 @@
             T *__restrict__ dst_re, T *__restrict__ dst_du, \
             std::size_t n, \
             const T *__restrict__ v_re, const T *__restrict__ v_du); \
+    template T rktk::detail::dot<T>(std::size_t n, const T *v, const T *w); \
     template void rktk::detail::lvm<T>( \
             T *__restrict__ dst, \
             std::size_t dst_size, std::size_t mat_size, \
@@ -119,6 +120,14 @@ void rktk::detail::esq(T *__restrict__ dst_re, T *__restrict__ dst_du,
         dst_du[i] = v_re[i] * v_du[i];
         dst_du[i] += dst_du[i];
     }
+}
+
+
+template <typename T>
+T rktk::detail::dot(std::size_t n, const T *v, const T *w) {
+    T result = v[0] * w[0];
+    for (std::size_t i = 1; i < n; ++i) { result += v[i] * w[i]; }
+    return result;
 }
 
 

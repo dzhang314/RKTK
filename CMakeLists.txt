@@ -8,10 +8,8 @@ include_directories(inc)
 add_compile_options(-O2 -march=native -mtune=native)
 
 add_executable(RKTK
-        bfgs_subroutines.hpp
-        LinearAlgebraSubroutines.hpp
         nonlinear_optimizers.hpp
         ObjectiveFunction.hpp
-        rksearch_main.cpp OrderConditionHelpers.hpp OrderConditionHelpers.cpp ObjectiveFunction.cpp)
+        rksearch_main.cpp OrderConditionHelpers.hpp OrderConditionHelpers.cpp ObjectiveFunction.cpp QuadraticLineSearcher.hpp)
 
 target_link_libraries(RKTK mpfr gmp)

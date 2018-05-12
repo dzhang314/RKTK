@@ -4,9 +4,6 @@
 // C++ standard library headers
 #include <cstddef> // for std::size_t
 
-// Project-specific headers
-#include "LinearAlgebraSubroutines.hpp"
-
 namespace rktk::detail {
 
     /*
@@ -56,6 +53,9 @@ namespace rktk::detail {
     void esq(T *__restrict__ dst_re, T *__restrict__ dst_du,
              std::size_t n,
              const T *__restrict__ v_re, const T *__restrict__ v_du);
+
+    template <typename T>
+    T dot(std::size_t n, const T *v, const T *w);
 
     template <typename T>
     void lvm(T *__restrict__ dst,

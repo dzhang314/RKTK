@@ -10,11 +10,11 @@ mkdir -p bin
 set -x
 
 if [ ! -f bin/ObjectiveFunction.o ]; then
-    g++-8 $GCC_FLAGS -c ObjectiveFunction.cpp -o bin/ObjectiveFunction.o
+    g++-7 $GCC_FLAGS -c ObjectiveFunction.cpp -o bin/ObjectiveFunction.o
 fi
-g++-8 $GCC_FLAGS -c OrderConditionHelpers.cpp -o bin/OrderConditionHelpers.o
-g++-8 $GCC_FLAGS -c rksearch_main.cpp -o bin/rksearch_main.o
+g++-7 $GCC_FLAGS -c OrderConditionHelpers.cpp -o bin/OrderConditionHelpers.o
+g++-7 $GCC_FLAGS -c rksearch_main.cpp -o bin/rksearch_main.o
 
-g++-8 $GCC_OPT_FLAGS \
+g++-7 $GCC_OPT_FLAGS \
     bin/ObjectiveFunction.o bin/OrderConditionHelpers.o bin/rksearch_main.o \
     -lmpfr -lgmp -o bin/rksearch
