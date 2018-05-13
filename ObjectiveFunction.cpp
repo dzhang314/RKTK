@@ -1,7 +1,6 @@
 #include "ObjectiveFunction.hpp"
 
 // Project-specific headers
-#include "LinearAlgebraSubroutines.hpp"
 #include "OrderConditionHelpers.hpp"
 
 #define EXPLICITLY_INSTANTIATE_OBJECTIVE(T) \
