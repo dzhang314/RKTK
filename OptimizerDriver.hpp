@@ -52,7 +52,7 @@ namespace rktk {
         std::uint64_t uuid[5];
         random_generator_t prng;
 
-    public: // =============================== STATIC CONSTRUCTOR HELPER METHODS
+    private: // ===================================== CONSTRUCTOR HELPER METHODS
 
         static random_generator_t properly_seeded_random_generator() {
             random_state_t seed_data;
@@ -69,17 +69,21 @@ namespace rktk {
             return random_generator;
         }
 
-    public: // ===================================================== CONSTRUCTOR
-
-        OptimizerDriver() : stdfun(funptr), stdgrad(gradptr),
-                            optimizer(NUM_VARS, stdfun, stdgrad),
-                            prng(properly_seeded_random_generator()) {
+        void randomize_uuid() {
             std::uniform_int_distribution<std::uint64_t> unif;
             uuid[0] = unif(prng) & 0xFFFFFFFF;
             uuid[1] = unif(prng) & 0xFFFF;
             uuid[2] = unif(prng) & 0xFFFF;
             uuid[3] = unif(prng) & 0xFFFF;
             uuid[4] = unif(prng) & 0xFFFFFFFFFFFF;
+        }
+
+    public: // ===================================================== CONSTRUCTOR
+
+        OptimizerDriver() : stdfun(funptr), stdgrad(gradptr),
+                            optimizer(NUM_VARS, stdfun, stdgrad),
+                            prng(properly_seeded_random_generator()) {
+            randomize_uuid();
         }
 
     public: // ==================================================== INITIALIZERS
@@ -91,6 +95,8 @@ namespace rktk {
                 x[i] = unif(prng);
             }
             optimizer.set_current_point(x);
+            optimizer.set_iteration_count(0);
+            randomize_uuid();
         }
 
         void initialize_from_file(const std::string &filename) {
@@ -122,6 +128,9 @@ namespace rktk {
                 uuid[2] = hex_substr_to_uint(filename, 29, 33);
                 uuid[3] = hex_substr_to_uint(filename, 34, 38);
                 uuid[4] = hex_substr_to_uint(filename, 39, 51);
+            } else {
+                optimizer.set_iteration_count(0);
+                randomize_uuid();
             }
         }
 

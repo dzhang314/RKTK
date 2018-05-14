@@ -114,7 +114,7 @@ void run_main_loop(char **argv, SearchMode mode, int print_prec,
     optimizer.print(print_prec);
     optimizer.write_to_file();
     last_print_clock = std::clock();
-    optimizer.set_step_size(1.0e-10);
+    optimizer.set_step_size(1024 * std::numeric_limits<T>::epsilon());
     while (true) {
         if (!optimizer.step()) {
             optimizer.print(print_prec);
