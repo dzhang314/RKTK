@@ -3,40 +3,53 @@
 
 // C++ standard library headers
 #include <functional> // for std::function
+#include <stdexcept> // for std::invalid_argument
 
 // Eigen linear algebra library headers
 #include <Eigen/Core> // for Eigen::Matrix
 
 namespace dznl {
 
-    template <typename T, std::size_t max_increases = 4>
+    template <typename T>
     class QuadraticLineSearcher {
 
-    private: // =============================================== MEMBER VARIABLES
+    private: // ========================================== INTERNAL TYPE ALIASES
 
         typedef Eigen::Matrix<T, Eigen::Dynamic, 1> VectorXT;
 
+    private: // =============================================== MEMBER VARIABLES
+
         const std::size_t n;
         const std::function<T(const T *)> f;
+
         const VectorXT x0;
         VectorXT xt;
         const VectorXT dx;
+
         const T f0;
         T f1;
         T f2;
+
         T best_objective_value;
         T best_step_size;
 
     public: // ==================================================== CONSTRUCTORS
 
         explicit QuadraticLineSearcher(
-                std::size_t problem_dimension,
                 const std::function<T(const T *)> &objective_function,
                 const VectorXT &initial_point, const VectorXT &step_direction)
-                : n(problem_dimension), f(objective_function),
+                : n(static_cast<std::size_t>(initial_point.size())),
+                  f(objective_function),
                   x0(initial_point), xt(n), dx(step_direction),
                   f0(objective_function(initial_point.data())), f1(0), f2(0),
-                  best_objective_value(f0), best_step_size(0) {}
+                  best_objective_value(f0), best_step_size(0) {
+            if (initial_point.size() != step_direction.size()) {
+                throw std::invalid_argument(
+                        "dznl::QuadraticLineSearcher constructor received "
+                        "initial point and step direction vectors of "
+                        "different sizes");
+            }
+        }
 
     public: // ======================================================= ACCESSORS
 
@@ -65,7 +78,7 @@ namespace dznl {
 
     public: // ============================================= LINE SEARCH METHODS
 
-        void search(T step_size) {
+        void search(T step_size, std::size_t max_increases = 4) {
             f1 = evaluate_objective_function(step_size);
             if (f1 < f0) {
                 std::size_t num_increases = 0;

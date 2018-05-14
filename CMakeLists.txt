@@ -5,11 +5,16 @@ set(CMAKE_CXX_STANDARD 11)
 
 include_directories(inc)
 
-add_compile_options(-O2 -march=native -mtune=native)
+add_compile_options(-O0) # for development
 
 add_executable(RKTK
-        nonlinear_optimizers.hpp
+        OrderConditionHelpers.hpp
+        OrderConditionHelpers.cpp
         ObjectiveFunction.hpp
-        rksearch_main.cpp OrderConditionHelpers.hpp OrderConditionHelpers.cpp ObjectiveFunction.cpp QuadraticLineSearcher.hpp)
+        ObjectiveFunction.cpp
+        QuadraticLineSearcher.hpp
+        BFGSOptimizer.hpp
+        OptimizerDriver.hpp
+        rksearch_main.cpp)
 
 target_link_libraries(RKTK mpfr gmp)

@@ -7,14 +7,15 @@ GCC_OPT_FLAGS="-Ofast -flto=8 -fno-fat-lto-objects -march=native"
 GCC_FLAGS="$GCC_STD_FLAGS $GCC_WRN_FLAGS $GCC_OPT_FLAGS"
 
 mkdir -p bin
+mkdir -p obj
 set -x
 
 if [ ! -f bin/ObjectiveFunction.o ]; then
-    g++-7 $GCC_FLAGS -c ObjectiveFunction.cpp -o bin/ObjectiveFunction.o
+    g++-7 $GCC_FLAGS -c ObjectiveFunction.cpp -o obj/ObjectiveFunction.o
 fi
-g++-7 $GCC_FLAGS -c OrderConditionHelpers.cpp -o bin/OrderConditionHelpers.o
-g++-7 $GCC_FLAGS -c rksearch_main.cpp -o bin/rksearch_main.o
+g++-7 $GCC_FLAGS -c OrderConditionHelpers.cpp -o obj/OrderConditionHelpers.o
+g++-7 $GCC_FLAGS -c rksearch_main.cpp -o obj/rksearch_main.o
 
 g++-7 $GCC_OPT_FLAGS \
-    bin/ObjectiveFunction.o bin/OrderConditionHelpers.o bin/rksearch_main.o \
+    obj/ObjectiveFunction.o obj/OrderConditionHelpers.o obj/rksearch_main.o \
     -lmpfr -lgmp -o bin/rksearch
