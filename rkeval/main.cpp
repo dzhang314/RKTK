@@ -1,6 +1,6 @@
 // C standard library headers
 #include <stddef.h> // for size_t
-#include <stdio.h>
+#include <stdio.h>  // for fprintf
 #include <stdlib.h> // for exit, strtoll
 #include <string.h> // for strlen
 
@@ -8,8 +8,8 @@
 #include <mpfr.h>
 
 // Project-specific headers
-#include "ObjectiveFunctionData.hpp"
-#include "ObjectiveFunctionHelpers.hpp"
+#include "OrderConditionData.hpp"
+#include "OrderConditionHelpers.hpp"
 
 using namespace rktk::detail;
 

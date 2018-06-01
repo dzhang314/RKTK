@@ -1,5 +1,5 @@
-#ifndef RKTK_OBJECTIVE_FUNCTION_HELPERS_HPP_INCLUDED
-#define RKTK_OBJECTIVE_FUNCTION_HELPERS_HPP_INCLUDED
+#ifndef RKTK_ORDER_CONDITION_HELPERS_HPP_INCLUDED
+#define RKTK_ORDER_CONDITION_HELPERS_HPP_INCLUDED
 
 // C++ standard library headers
 #include <cstddef> // for std::size_t
@@ -127,4 +127,4 @@ namespace rktk::detail {
 
 } // namespace rktk::detail
 
-#endif // RKTK_OBJECTIVE_FUNCTION_HELPERS_HPP_INCLUDED
+#endif // RKTK_ORDER_CONDITION_HELPERS_HPP_INCLUDED
