@@ -1,5 +1,3 @@
-#define __USE_MINGW_ANSI_STDIO 1
-
 // C standard library headers
 #include <stddef.h> // for size_t
 #include <stdio.h>
@@ -10,8 +8,10 @@
 #include <mpfr.h>
 
 // Project-specific headers
-#include "ObjectiveFunctionData.h"
-#include "ObjectiveFunctionHelpers.h"
+#include "ObjectiveFunctionData.hpp"
+#include "ObjectiveFunctionHelpers.hpp"
+
+using namespace rktk::detail;
 
 static mpfr_t r, s, t, u[M_SIZE], v[M_SIZE], w[G_SIZE], x[NUM_VARS];
 
@@ -32,16 +32,16 @@ static inline void initialize_tabs(mpfr_prec_t prec) {
 void objective_function(mpfr_ptr f, mpfr_srcptr x) {
     for (size_t i = 0; i < G_SIZE; ++i) {
         switch (R[i].f) {
-            case LRS:
+            case rkop::LRS:
                 lrsm(u[B[i]], A[i], x);
                 break;
-            case LVM:
+            case rkop::LVM:
                 lvmm(u[B[i]], A[i], NUM_STAGES, x, u[R[i].x]);
                 break;
-            case ESQ:
+            case rkop::ESQ:
                 esqm(u[B[i]], A[i], u[R[i].x]);
                 break;
-            case ELM:
+            case rkop::ELM:
                 elmm(u[B[i]], A[i], u[R[i].x], u[R[i].y]);
                 break;
         }
@@ -59,17 +59,17 @@ void objective_function(mpfr_ptr f, mpfr_srcptr x) {
 void objective_function_partial(mpfr_ptr g, mpfr_srcptr x, size_t i) {
     for (size_t j = 0; j < G_SIZE; ++j) {
         switch (R[j].f) {
-            case LRS:
+            case rkop::LRS:
                 lrss(u[B[j]], v[B[j]], A[j], x, i);
                 break;
-            case LVM:
+            case rkop::LVM:
                 lvms(u[B[j]], v[B[j]], A[j], NUM_STAGES, x, i,
                      u[R[j].x], v[R[j].x]);
                 break;
-            case ESQ:
+            case rkop::ESQ:
                 esqz(u[B[j]], v[B[j]], A[j], u[R[j].x], v[R[j].x]);
                 break;
-            case ELM:
+            case rkop::ELM:
                 elmz(u[B[j]], v[B[j]], A[j],
                      u[R[j].x], v[R[j].x], u[R[j].y], v[R[j].y]);
                 break;
