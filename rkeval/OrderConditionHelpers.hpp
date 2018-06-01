@@ -7,6 +7,22 @@
 // GNU MPFR multiprecision library headers
 #include <mpfr.h>
 
+namespace rktk {
+
+    static inline void dot(mpfr_ptr dst, std::size_t n,
+                           mpfr_srcptr v, mpfr_srcptr w) {
+        if (n == 0) {
+            mpfr_set_zero(dst, 0);
+        } else {
+            mpfr_mul(dst, v, w, MPFR_RNDN);
+            for (std::size_t i = 1; i < n; ++i) {
+                mpfr_fma(dst, v + i, w + i, dst, MPFR_RNDN);
+            }
+        }
+    }
+
+} // namespace rktk
+
 namespace rktk::detail {
 
     static inline void lrsm(mpfr_ptr dst, std::size_t dst_size,
@@ -64,21 +80,13 @@ namespace rktk::detail {
         }
     }
 
-    static inline void dotm(mpfr_ptr dst, std::size_t n,
-                            mpfr_srcptr v, mpfr_srcptr w) {
-        mpfr_mul(dst, v, w, MPFR_RNDN);
-        for (std::size_t i = 1; i < n; ++i) {
-            mpfr_fma(dst, v + i, w + i, dst, MPFR_RNDN);
-        }
-    }
-
     static inline void lvmm(mpfr_ptr dst,
                             std::size_t dst_size, std::size_t mat_size,
                             mpfr_srcptr mat, mpfr_srcptr vec) {
         std::size_t skp = mat_size - dst_size;
         std::size_t idx = skp * (skp + 1) / 2 - 1;
         for (std::size_t i = 0; i < dst_size; ++i, idx += skp, ++skp) {
-            dotm(dst + i, i + 1, mat + idx, vec);
+            dot(dst + i, i + 1, mat + idx, vec);
         }
     }
 
@@ -90,39 +98,12 @@ namespace rktk::detail {
         std::size_t skp = mat_size - dst_size;
         std::size_t idx = skp * (skp + 1) / 2 - 1;
         for (std::size_t i = 0; i < dst_size; ++i, idx += skp, ++skp) {
-            dotm(dst_du + i, i + 1, mat_re + idx, vec_du);
+            dot(dst_du + i, i + 1, mat_re + idx, vec_du);
             if (idx <= mat_di && mat_di <= idx + i) {
                 mpfr_add(dst_du + i, dst_du + i, vec_re + mat_di - idx,
                         MPFR_RNDN);
             }
         }
-    }
-
-    static inline void srim(mpfr_ptr dst, unsigned long int src) {
-        mpfr_set_ui(dst, 1, MPFR_RNDN);
-        mpfr_div_ui(dst, dst, src, MPFR_RNDN);
-    }
-
-    static inline void resm(mpfr_ptr f, mpfr_ptr tmp, std::size_t n,
-                            mpfr_srcptr m, mpfr_srcptr x, mpfr_srcptr gamma) {
-        dotm(tmp, n, m, x);
-        mpfr_sub(tmp, tmp, gamma, MPFR_RNDN);
-        mpfr_fma(f, tmp, tmp, f, MPFR_RNDN);
-    }
-
-    static inline void ress(mpfr_ptr dst, mpfr_ptr tmp_re, mpfr_ptr tmp_du,
-                            std::size_t n,
-                            mpfr_srcptr m_re, mpfr_srcptr m_du,
-                            mpfr_srcptr x_re, std::size_t x_di,
-                            std::size_t x_offset, mpfr_srcptr gamma) {
-        dotm(tmp_re, n, m_re, x_re + x_offset);
-        mpfr_sub(tmp_re, tmp_re, gamma, MPFR_RNDN);
-        mpfr_mul_2ui(tmp_re, tmp_re, 1, MPFR_RNDN);
-        dotm(tmp_du, n, m_du, x_re + x_offset);
-        if (x_offset <= x_di && x_di < x_offset + n) {
-            mpfr_add(tmp_du, tmp_du, m_re + (x_di - x_offset), MPFR_RNDN);
-        }
-        mpfr_fma(dst, tmp_re, tmp_du, dst, MPFR_RNDN);
     }
 
 } // namespace rktk::detail
