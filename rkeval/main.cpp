@@ -1,8 +1,10 @@
-// C standard library headers
-#include <stddef.h> // for size_t
-#include <stdio.h>  // for fprintf
-#include <stdlib.h> // for exit, strtoll
-#include <string.h> // for strlen
+// C++ standard library includes
+#include <cstddef> // for std::size_t
+#include <cstdio>  // for std::fopen
+#include <cstdlib> // for std::exit, std::strtoll
+#include <cstring> // for std::strlen
+#include <iostream>
+#include <vector>
 
 // GNU MPFR multiprecision library headers
 #include <mpfr.h>
@@ -10,71 +12,76 @@
 // Project-specific headers
 #include "OrderConditionEvaluator.hpp"
 
-constexpr int order = 10;
-constexpr int num_stages = 16;
-constexpr int NUM_VARS = num_stages * (num_stages + 1) / 2;
-mpfr_t r, x[NUM_VARS];
-
-static inline void initialize_tabs(mpfr_prec_t prec) {
-    mpfr_init2(r, prec);
-    for (size_t i = 0; i < NUM_VARS; ++i) { mpfr_init2(x[i], prec); }
-}
-
-static inline mp_prec_t get_precision(char *prec_str) {
+long long int get_positive_integer_argument(char *str) {
     char *end;
-    const long int precision = strtol(prec_str, &end, 10);
-    const int read_whole_arg = (strlen(prec_str) == (size_t) (end - prec_str));
-    const int is_positive = (precision > 0);
-    if (read_whole_arg && is_positive) {
-        fprintf(stderr, "Requested %ld-bit precision.\n", precision);
-    } else {
-        fprintf(stderr, "ERROR: Could not interpret command-line argument "
-                        "'%s' as a positive integer.\n", prec_str);
-        exit(EXIT_FAILURE);
+    const long long int result = std::strtoll(str, &end, 10);
+    const int read_whole_arg = (std::strlen(str) ==
+        static_cast<std::size_t>(end - str));
+    const int is_positive = (result > 0);
+    if (!read_whole_arg || !is_positive) {
+        std::cerr << "ERROR: Expected command-line argument '" << str
+                  << "' to be a positive integer." << std::endl;
+        std::exit(EXIT_FAILURE);
     }
-    return (mp_prec_t) precision;
+    return result;
 }
 
-static inline void read_input_file(char *filename) {
-    FILE *input_file = fopen(filename, "r");
-    if (input_file == NULL) {
-        fprintf(stderr, "ERROR: could not open input file '%s'.\n", filename);
-        exit(EXIT_FAILURE);
+static inline void read_input_file(mpfr_ptr x, std::size_t n, char *filename) {
+    std::FILE *input_file = std::fopen(filename, "r");
+    if (input_file == nullptr) {
+        std::cerr << "ERROR: Could not open input file '" << filename
+                  << "'." << std::endl;
+        std::exit(EXIT_FAILURE);
     }
-    fprintf(stderr, "Successfully opened input file. Reading...\n");
-    for (size_t i = 0; i < NUM_VARS; ++i) {
-        if (mpfr_inp_str(x[i], input_file, 10, MPFR_RNDN) == 0) {
-            fprintf(stderr, "ERROR: Could not read input file entry "
-                            "at index %zu.\n", i);
-            exit(EXIT_FAILURE);
+    for (std::size_t i = 0; i < n; ++i) {
+        if (mpfr_inp_str(x + i, input_file, 10, MPFR_RNDN) == 0) {
+            std::cerr << "ERROR: Could not read input file entry at index "
+                      << i << "." << std::endl;
+            std::exit(EXIT_FAILURE);
         }
     }
-    fclose(input_file);
+    std::fclose(input_file);
 }
 
 int main(int argc, char **argv) {
-    if (argc < 3) {
-        fprintf(stderr,
-                "Usage: %s num-bits input-filename [calculate-grad] \n",
-                argv[0]);
-        exit(EXIT_FAILURE);
+    if (argc < 5) {
+        std::cerr << "Usage: " << argv[0] << " order num-stages num-bits "
+                  << "input-filename [calculate-gradient]" << std::endl;
+        return EXIT_FAILURE;
     }
-    const mp_prec_t prec = get_precision(argv[1]);
-    fprintf(stderr, "Allocating arrays...");
-    rktk::OrderConditionEvaluator evaluator(order, num_stages, prec);
-    initialize_tabs(prec);
-    fprintf(stderr, " Done.\n");
-    read_input_file(argv[2]);
-    fprintf(stderr, "Successfully read input file.\n");
-    if (argc == 3) {
-        evaluator.objective_function(r, *x);
-        mpfr_out_str(stdout, 10, 0, r, MPFR_RNDN);
-        putchar('\n');
+    const unsigned long long int order = static_cast<unsigned long long int>(
+        get_positive_integer_argument(argv[1]));
+    const std::size_t num_stages = static_cast<std::size_t>(
+        get_positive_integer_argument(argv[2]));
+    const std::size_t num_vars = num_stages * (num_stages + 1) / 2;
+    const mpfr_prec_t prec = static_cast<mp_prec_t>(
+        get_positive_integer_argument(argv[3]));
+    if (order > 15) {
+        std::cerr << "ERROR: Runge-Kutta methods of order greater than 15 "
+                  << "are not yet supported." << std::endl;
+        std::exit(EXIT_FAILURE);
+    }
+    if (order > num_stages) {
+        std::cerr << "ERROR: The order of a Runge-Kutta method cannot exceed "
+                  << "its number of stages." << std::endl;
+        std::exit(EXIT_FAILURE);
+    }
+    mpfr_t result;
+    mpfr_init2(result, prec);
+    std::vector<mpfr_t> x(num_vars);
+    for (std::size_t i = 0; i < num_vars; ++i) { mpfr_init2(x[i], prec); }
+    read_input_file(x[0], num_vars, argv[4]);
+    rktk::OrderConditionEvaluator evaluator(
+        static_cast<int>(order), num_stages, prec);
+    if (argc == 5) {
+        evaluator.objective_function(result, x[0]);
+        mpfr_out_str(stdout, 10, 0, result, MPFR_RNDN);
+        std::cout << std::endl;
     } else {
-        for (size_t i = 0; i < NUM_VARS; ++i) {
-            evaluator.objective_function_partial(r, *x, i);
-            mpfr_out_str(stdout, 10, 0, r, MPFR_RNDN);
-            putchar('\n');
+        for (size_t i = 0; i < num_vars; ++i) {
+            evaluator.objective_function_partial(result, x[0], i);
+            mpfr_out_str(stdout, 10, 0, result, MPFR_RNDN);
+            std::cout << std::endl;
         }
     }
 }
