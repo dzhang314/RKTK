@@ -10,6 +10,9 @@
 // Project-specific headers
 #include "OrderConditionEvaluator.hpp"
 
+constexpr int order = 10;
+constexpr int num_stages = 16;
+constexpr int NUM_VARS = num_stages * (num_stages + 1) / 2;
 mpfr_t r, x[NUM_VARS];
 
 static inline void initialize_tabs(mpfr_prec_t prec) {
@@ -58,7 +61,7 @@ int main(int argc, char **argv) {
     }
     const mp_prec_t prec = get_precision(argv[1]);
     fprintf(stderr, "Allocating arrays...");
-    rktk::OrderConditionEvaluator evaluator(prec);
+    rktk::OrderConditionEvaluator evaluator(order, num_stages, prec);
     initialize_tabs(prec);
     fprintf(stderr, " Done.\n");
     read_input_file(argv[2]);
