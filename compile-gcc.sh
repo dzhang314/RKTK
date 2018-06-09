@@ -10,9 +10,4 @@ mkdir -p bin
 mkdir -p obj
 set -x
 
-g++-8 $GCC_FLAGS -c ObjectiveFunction.cpp -o obj/ObjectiveFunction.o
-g++-8 $GCC_FLAGS -c OrderConditionHelpers.cpp -o obj/OrderConditionHelpers.o
-g++-8 $GCC_FLAGS -c rksearch_main.cpp -o obj/rksearch_main.o
-g++-8 $GCC_OPT_FLAGS \
-    obj/ObjectiveFunction.o obj/OrderConditionHelpers.o obj/rksearch_main.o \
-    -lmpfr -lgmp -o bin/rksearch
+g++-8 $GCC_FLAGS rksearch_main.cpp -lmpfr -lgmp -o bin/rksearch
