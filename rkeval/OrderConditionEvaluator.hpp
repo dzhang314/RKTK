@@ -16,9 +16,6 @@
 
 namespace rktk {
 
-    using detail::NUM_OPS, detail::GAMMA, detail::SIZE_DEFICIT,
-          detail::TOTAL_SIZE_DEFICIT, detail::OPCODES;
-
     class OrderConditionEvaluator {
 
     private: // =============================================== MEMBER VARIABLES
@@ -36,10 +33,13 @@ namespace rktk {
 
     public: // ===================================================== CONSTRUCTOR
 
-        OrderConditionEvaluator(int order, std::size_t num_stages, mpfr_prec_t prec)
-            : order(order), num_ops(NUM_OPS[order]), num_stages(num_stages),
+        OrderConditionEvaluator(int order, std::size_t num_stages,
+                                mpfr_prec_t prec)
+            : order(order), num_ops(detail::NUM_OPS[order]),
+              num_stages(num_stages),
               num_vars(num_stages * (num_stages + 1) / 2),
-              table_size(num_ops * num_stages - TOTAL_SIZE_DEFICIT[num_ops]),
+              table_size(num_ops * num_stages -
+                         detail::TOTAL_SIZE_DEFICIT[num_ops]),
               u(table_size), v(table_size), w(num_ops) {
             if (order <= 0) {
                 throw std::invalid_argument(
@@ -49,7 +49,7 @@ namespace rktk {
                 throw std::invalid_argument(
                     "rktk::OrderConditionEvaluator only supports orders "
                     "up to 15");
-            }            
+            }
             mpfr_init2(s, prec);
             mpfr_init2(t, prec);
             for (std::size_t i = 0; i < table_size; ++i) {
@@ -61,7 +61,7 @@ namespace rktk {
             for (std::size_t i = 0; i < num_ops; ++i) {
                 mpfr_init2(w[i], prec);
                 mpfr_set_ui(w[i], +1, rnd);
-                mpfr_div_ui(w[i], w[i], GAMMA[i], rnd);
+                mpfr_div_ui(w[i], w[i], detail::GAMMA[i], rnd);
             }
         }
 
@@ -90,15 +90,15 @@ namespace rktk {
     private: // ================================================================
 
         std::size_t idx(std::size_t i) {
-            return num_stages * i - TOTAL_SIZE_DEFICIT[i];
+            return num_stages * i - detail::TOTAL_SIZE_DEFICIT[i];
         }
 
     public: // =================================================================
 
         void objective_function(mpfr_ptr f, mpfr_srcptr x) {
             for (std::size_t i = 0, pos = 0; i < num_ops; ++i) {
-                const std::size_t n = num_stages - SIZE_DEFICIT[i];
-                const detail::rkop_t op = OPCODES[i];
+                const std::size_t n = num_stages - detail::SIZE_DEFICIT[i];
+                const detail::rkop_t op = detail::OPCODES[i];
                 switch (op.f) {
                     case detail::rkop::LRS: {
                         detail::lrsm(u[pos], n, x);
@@ -110,8 +110,8 @@ namespace rktk {
                         detail::esqm(u[pos], n, u[idx(op.a)]);
                     } break;
                     case detail::rkop::ELM: {
-                        const std::size_t ad = SIZE_DEFICIT[op.a];
-                        const std::size_t bd = SIZE_DEFICIT[op.b];
+                        const std::size_t ad = detail::SIZE_DEFICIT[op.a];
+                        const std::size_t bd = detail::SIZE_DEFICIT[op.b];
                         const std::size_t md = std::max(ad, bd);
                         detail::elmm(u[pos], n,
                                      u[idx(op.a) + md - ad],
@@ -126,7 +126,7 @@ namespace rktk {
             }
             mpfr_sqr(f, f, rnd);
             for (std::size_t i = 0, pos = 0; i < num_ops; ++i) {
-                const std::size_t n = num_stages - SIZE_DEFICIT[i];
+                const std::size_t n = num_stages - detail::SIZE_DEFICIT[i];
                 dot(s, n, u[pos], x + num_vars - n);
                 mpfr_sub(s, s, w[i], rnd);
                 mpfr_fma(f, s, s, f, rnd);
@@ -137,8 +137,8 @@ namespace rktk {
         void objective_function_partial(mpfr_ptr g, mpfr_srcptr x,
                                         std::size_t i) {
             for (std::size_t j = 0, pos = 0; j < num_ops; ++j) {
-                const std::size_t n = num_stages - SIZE_DEFICIT[j];
-                const detail::rkop_t op = OPCODES[j];
+                const std::size_t n = num_stages - detail::SIZE_DEFICIT[j];
+                const detail::rkop_t op = detail::OPCODES[j];
                 switch (op.f) {
                     case detail::rkop::LRS: {
                         detail::lrss(u[pos], v[pos], n, x, i);
@@ -152,12 +152,13 @@ namespace rktk {
                                      u[idx(op.a)], v[idx(op.a)]);
                     } break;
                     case detail::rkop::ELM: {
-                        const std::size_t ad = SIZE_DEFICIT[op.a];
-                        const std::size_t bd = SIZE_DEFICIT[op.b];
+                        const std::size_t ad = detail::SIZE_DEFICIT[op.a];
+                        const std::size_t bd = detail::SIZE_DEFICIT[op.b];
                         const std::size_t md = std::max(ad, bd);
                         const std::size_t ao = idx(op.a) + md - ad;
                         const std::size_t bo = idx(op.b) + md - bd;
-                        detail::elmz(u[pos], v[pos], n, u[ao], v[ao], u[bo], v[bo]);
+                        detail::elmz(u[pos], v[pos], n,
+                                     u[ao], v[ao], u[bo], v[bo]);
                     } break;
                 }
                 pos += n;
@@ -172,7 +173,7 @@ namespace rktk {
                 mpfr_set_zero(g, 0);
             }
             for (std::size_t j = 0, pos = 0; j < num_ops; ++j) {
-                const std::size_t n = num_stages - SIZE_DEFICIT[j];
+                const std::size_t n = num_stages - detail::SIZE_DEFICIT[j];
                 dot(s, n, u[pos], x + num_vars - n);
                 mpfr_sub(s, s, w[j], rnd);
                 mpfr_mul_2ui(s, s, 1, rnd);

@@ -24,9 +24,7 @@ namespace rktk::detail {
     */
 
     template <typename T>
-    void lrs(T *__restrict__ dst,
-             std::size_t n,
-             const T *__restrict__ mat) {
+    void lrs(T *__restrict__ dst, std::size_t n, const T *__restrict__ mat) {
         for (std::size_t i = 0, k = 0; i < n; ++i) {
             dst[i] = mat[k];
             ++k;
@@ -37,8 +35,7 @@ namespace rktk::detail {
     }
 
     template <typename T>
-    void lrs(T *__restrict__ dst_re, T *__restrict__ dst_du,
-             std::size_t n,
+    void lrs(T *__restrict__ dst_re, T *__restrict__ dst_du, std::size_t n,
              const T *__restrict__ mat_re, std::size_t mat_di) {
         lrs(dst_re, n, mat_re);
         // TODO: It should be possible to directly calculate the vector index
@@ -54,15 +51,13 @@ namespace rktk::detail {
     }
 
     template <typename T>
-    void elm(T *__restrict__ dst,
-             std::size_t n,
+    void elm(T *__restrict__ dst, std::size_t n,
              const T *__restrict__ v, const T *__restrict__ w) {
         for (std::size_t i = 0; i < n; ++i) { dst[i] = v[i] * w[i]; }
     }
 
     template <typename T>
-    void elm(T *__restrict__ dst_re, T *__restrict__ dst_du,
-             std::size_t n,
+    void elm(T *__restrict__ dst_re, T *__restrict__ dst_du, std::size_t n,
              const T *__restrict__ v_re, const T *__restrict__ v_du,
              const T *__restrict__ w_re, const T *__restrict__ w_du) {
         elm(dst_re, n, v_re, w_re);
@@ -72,15 +67,12 @@ namespace rktk::detail {
     }
 
     template <typename T>
-    void esq(T *__restrict__ dst,
-             std::size_t n,
-             const T *__restrict__ v) {
+    void esq(T *__restrict__ dst, std::size_t n, const T *__restrict__ v) {
         for (std::size_t i = 0; i < n; ++i) { dst[i] = v[i] * v[i]; }
     }
 
     template <typename T>
-    void esq(T *__restrict__ dst_re, T *__restrict__ dst_du,
-             std::size_t n,
+    void esq(T *__restrict__ dst_re, T *__restrict__ dst_du, std::size_t n,
              const T *__restrict__ v_re, const T *__restrict__ v_du) {
         esq(dst_re, n, v_re);
         for (std::size_t i = 0; i < n; ++i) {
@@ -101,8 +93,7 @@ namespace rktk::detail {
     }
 
     template <typename T>
-    void lvm(T *__restrict__ dst,
-             std::size_t dst_size, std::size_t mat_size,
+    void lvm(T *__restrict__ dst, std::size_t dst_size, std::size_t mat_size,
              const T *__restrict__ mat, const T *__restrict__ vec) {
         std::size_t skip = mat_size - dst_size;
         std::size_t index = skip * (skip + 1) / 2 - 1;
@@ -131,10 +122,8 @@ namespace rktk::detail {
     T sqr(T x) { return x * x; }
 
     template <typename T>
-    T res(std::size_t n,
-          const T *__restrict__ m_re, const T *__restrict__ m_du,
-          std::size_t m_offset,
-          const T *__restrict__ x_re, std::size_t x_di,
+    T res(std::size_t n, const T *__restrict__ m_re, const T *__restrict__ m_du,
+          std::size_t m_offset, const T *__restrict__ x_re, std::size_t x_di,
           std::size_t x_offset, T gamma) {
         const T a = dot(n, m_re + m_offset, x_re + x_offset) - gamma;
         const T b = ((x_offset <= x_di) && (x_di < x_offset + n))

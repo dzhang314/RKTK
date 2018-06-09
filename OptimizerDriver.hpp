@@ -38,14 +38,10 @@ namespace rktk {
                 random_generator_t::result_type,
                 random_generator_t::state_size> random_state_t;
 
-    private: // ===================================== INTERNAL FUNCTION POINTERS
-
-        static constexpr T (*funptr)(const T *) = &objective_function;
-
-        static constexpr void (*gradptr)(T *, const T *) = &objective_gradient;
-
     private: // =============================================== MEMBER VARIABLES
 
+        static constexpr std::size_t NUM_VARS = 136;
+        OrderConditionEvaluator<T> evaluator;
         const std::function<T(const T *)> stdfun;
         const std::function<void(T *, const T *)> stdgrad;
         dznl::BFGSOptimizer<T> optimizer;
@@ -80,7 +76,13 @@ namespace rktk {
 
     public: // ===================================================== CONSTRUCTOR
 
-        OptimizerDriver() : stdfun(funptr), stdgrad(gradptr),
+        OptimizerDriver() : evaluator(10, 16),
+                            stdfun([&](const T *x) {
+                                return evaluator.objective_function(x);
+                            }),
+                            stdgrad([&](T *g, const T *x) {
+                                evaluator.objective_gradient(g, x);
+                            }),
                             optimizer(NUM_VARS, stdfun, stdgrad),
                             prng(properly_seeded_random_generator()) {
             randomize_uuid();
