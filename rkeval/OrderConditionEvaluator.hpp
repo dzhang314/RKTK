@@ -2,6 +2,7 @@
 #define RKTK_ORDER_CONDITION_EVALUATOR_HPP_INCLUDED
 
 // C++ standard library headers
+#include <algorithm> // for std::max
 #include <cstddef> // for std::size_t
 #include <stdexcept> // for std::invalid_argument
 #include <vector>
