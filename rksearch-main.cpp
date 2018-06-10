@@ -160,6 +160,12 @@ void run_main_loop(int order, std::size_t num_steps,
 }
 
 int main(int argc, char **argv) {
+    if (argc < 3) {
+        std::cerr << "Usage: " << argv[0] << " order num-stages num-bits "
+                  << "print-period print-precision [input-filename]"
+                  << std::endl;
+        return EXIT_FAILURE;
+    }
     const unsigned long long int order = static_cast<unsigned long long int>(
             get_positive_integer_argument(argv[1]));
     const std::size_t num_stages = static_cast<std::size_t>(
