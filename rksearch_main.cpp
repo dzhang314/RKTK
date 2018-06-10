@@ -13,12 +13,26 @@ typedef std::numeric_limits<float> float_limits;
 typedef std::numeric_limits<double> double_limits;
 typedef std::numeric_limits<long double> long_double_limits;
 
-int get_precision(int argc, char **argv) {
-    if (argc >= 2) {
+long long int get_positive_integer_argument(char *str) {
+    char *end;
+    const long long int result = std::strtoll(str, &end, 10);
+    const int read_whole_arg = (std::strlen(str) ==
+        static_cast<std::size_t>(end - str));
+    const int is_positive = (result > 0);
+    if (!read_whole_arg || !is_positive) {
+        std::cerr << "ERROR: Expected command-line argument '" << str
+                  << "' to be a positive integer." << std::endl;
+        std::exit(EXIT_FAILURE);
+    }
+    return result;
+}
+
+int get_precision(int argc, char **argv, int index) {
+    if (argc > index) {
         char *end;
-        const long long int precision = std::strtoll(argv[1], &end, 10);
-        const bool read_whole_arg = (std::strlen(argv[1]) ==
-                                     static_cast<std::size_t>(end - argv[1]));
+        const long long int precision = std::strtoll(argv[index], &end, 10);
+        const bool read_whole_arg = (std::strlen(argv[index]) ==
+                                     static_cast<std::size_t>(end - argv[index]));
         const bool is_positive = (precision > 0);
         if (read_whole_arg && is_positive) {
             std::cout << "Requested " << precision << "-bit precision."
@@ -66,12 +80,12 @@ int get_precision(int argc, char **argv) {
     }
 }
 
-double get_print_period(int argc, char **argv) {
-    if (argc >= 3) {
+double get_print_period(int argc, char **argv, int index) {
+    if (argc > index) {
         char *end;
-        const double print_period = std::strtod(argv[2], &end);
-        const bool read_whole_arg = (std::strlen(argv[2]) ==
-                                     static_cast<std::size_t>(end - argv[2]));
+        const double print_period = std::strtod(argv[index], &end);
+        const bool read_whole_arg = (std::strlen(argv[index]) ==
+                                     static_cast<std::size_t>(end - argv[index]));
         const bool is_finite = std::isfinite(print_period);
         const bool is_positive = (print_period >= 0.0);
         if (read_whole_arg && is_finite && is_positive) {
@@ -81,12 +95,12 @@ double get_print_period(int argc, char **argv) {
     return 0.5;
 }
 
-int get_print_precision(int argc, char **argv) {
-    if (argc >= 4) {
+int get_print_precision(int argc, char **argv, int index) {
+    if (argc > index) {
         char *end;
-        const long long print_precision = std::strtoll(argv[3], &end, 10);
-        const bool read_whole_arg = (std::strlen(argv[3]) ==
-                                     static_cast<std::size_t>(end - argv[3]));
+        const long long print_precision = std::strtoll(argv[index], &end, 10);
+        const bool read_whole_arg = (std::strlen(argv[index]) ==
+                                     static_cast<std::size_t>(end - argv[index]));
         const bool is_non_negative = (print_precision >= 0);
         const bool in_range = (print_precision <=
                                std::numeric_limits<int>::max());
@@ -102,11 +116,12 @@ enum class SearchMode {
 };
 
 template <typename T>
-void run_main_loop(char **argv, SearchMode mode, int print_prec,
+void run_main_loop(int order, std::size_t num_steps,
+                   char *filename, SearchMode mode, int print_prec,
                    std::clock_t clocks_between_prints) {
-    rktk::OptimizerDriver<T> optimizer;
+    rktk::OptimizerDriver<T> optimizer(order, num_steps);
     if (mode == SearchMode::REFINE) {
-        optimizer.initialize_from_file(std::string(argv[4]));
+        optimizer.initialize_from_file(std::string(filename));
     }
     std::clock_t last_print_clock;
     reset_d:
@@ -142,19 +157,33 @@ void run_main_loop(char **argv, SearchMode mode, int print_prec,
 }
 
 int main(int argc, char **argv) {
+    const unsigned long long int order = static_cast<unsigned long long int>(
+        get_positive_integer_argument(argv[1]));
+    const std::size_t num_stages = static_cast<std::size_t>(
+        get_positive_integer_argument(argv[2]));
+    if (order > 15) {
+        std::cerr << "ERROR: Runge-Kutta methods of order greater than 15 "
+                  << "are not yet supported." << std::endl;
+        std::exit(EXIT_FAILURE);
+    }
+    if (order > num_stages) {
+        std::cerr << "ERROR: The order of a Runge-Kutta method cannot exceed "
+                  << "its number of stages." << std::endl;
+        std::exit(EXIT_FAILURE);
+    }
+    const int prec = get_precision(argc, argv, 3);
     const auto clocks_between_prints = static_cast<std::clock_t>(
-            get_print_period(argc, argv) * CLOCKS_PER_SEC);
-    const int prec = get_precision(argc, argv);
-    const int print_prec = get_print_precision(argc, argv);
-    const SearchMode mode = (argc >= 5)
+            get_print_period(argc, argv, 4) * CLOCKS_PER_SEC);
+    const int print_prec = get_print_precision(argc, argv, 5);
+    const SearchMode mode = (argc > 6)
                             ? SearchMode::REFINE
                             : SearchMode::EXPLORE;
     if (prec == float_limits::digits) {
-        run_main_loop<float>(argv, mode, print_prec, clocks_between_prints);
+        run_main_loop<float>(order, num_stages, argv[6], mode, print_prec, clocks_between_prints);
     } else if (prec == double_limits::digits) {
-        run_main_loop<double>(argv, mode, print_prec, clocks_between_prints);
+        run_main_loop<double>(order, num_stages, argv[6], mode, print_prec, clocks_between_prints);
     } else {
         run_main_loop<long double>(
-                argv, mode, print_prec, clocks_between_prints);
+                order, num_stages, argv[6], mode, print_prec, clocks_between_prints);
     }
 }

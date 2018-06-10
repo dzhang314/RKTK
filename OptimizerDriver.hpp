@@ -40,7 +40,7 @@ namespace rktk {
 
     private: // =============================================== MEMBER VARIABLES
 
-        static constexpr std::size_t NUM_VARS = 136;
+        const std::size_t num_vars;
         OrderConditionEvaluator<T> evaluator;
         const std::function<T(const T *)> stdfun;
         const std::function<void(T *, const T *)> stdgrad;
@@ -76,15 +76,17 @@ namespace rktk {
 
     public: // ===================================================== CONSTRUCTOR
 
-        OptimizerDriver() : evaluator(10, 16),
-                            stdfun([&](const T *x) {
-                                return evaluator.objective_function(x);
-                            }),
-                            stdgrad([&](T *g, const T *x) {
-                                evaluator.objective_gradient(g, x);
-                            }),
-                            optimizer(NUM_VARS, stdfun, stdgrad),
-                            prng(properly_seeded_random_generator()) {
+        OptimizerDriver(int order, std::size_t num_stages)
+            : num_vars(num_stages * (num_stages + 1) / 2),
+              evaluator(order, num_stages),
+              stdfun([&](const T *x) {
+                  return evaluator.objective_function(x);
+              }),
+              stdgrad([&](T *g, const T *x) {
+                  evaluator.objective_gradient(g, x);
+              }),
+              optimizer(num_vars, stdfun, stdgrad),
+              prng(properly_seeded_random_generator()) {
             randomize_uuid();
         }
 
@@ -92,8 +94,8 @@ namespace rktk {
 
         void initialize_random() {
             std::uniform_real_distribution<T> unif(T(0), T(1));
-            VectorXT x(NUM_VARS);
-            for (std::size_t i = 0; i < NUM_VARS; ++i) {
+            VectorXT x(num_vars);
+            for (std::size_t i = 0; i < num_vars; ++i) {
                 x[i] = unif(prng);
             }
             optimizer.set_current_point(x);
@@ -111,8 +113,8 @@ namespace rktk {
             }
             std::cout << "Successfully opened input file. Reading..."
                       << std::endl;
-            VectorXT x(NUM_VARS);
-            for (std::size_t i = 0; i < NUM_VARS; ++i) {
+            VectorXT x(num_vars);
+            for (std::size_t i = 0; i < num_vars; ++i) {
                 input_file >> x[i];
                 if (input_file.fail()) {
                     std::cout << "ERROR: Could not read input file entry "
@@ -152,8 +154,8 @@ namespace rktk {
             bool result = optimizer.step();
             if (!result) {
                 std::cout << "NOTICE: Optimal step size reduced to zero. "
-                             "BFGS iteration has converged "
-                             "to the requested precision." << std::endl;
+                          << "BFGS iteration has converged "
+                          << "to the requested precision." << std::endl;
             }
             return result;
         }
@@ -172,7 +174,19 @@ namespace rktk {
                       << " | " << optimizer.get_current_gradient().norm()
                       << " | " << optimizer.get_last_step_size()
                       << " | " << optimizer.get_current_point().norm()
-                      << std::endl;
+                      << " | ";
+            switch (optimizer.get_last_step_type()) {
+                case dznl::StepType::NONE:
+                    std::cout << "NONE";
+                    break;
+                case dznl::StepType::GRAD:
+                    std::cout << "GRAD";
+                    break;
+                case dznl::StepType::BFGS:
+                    std::cout << "BFGS";
+                    break;
+            }
+            std::cout << std::endl;
             std::cout.flags(old_flags);
         }
 
@@ -210,7 +224,7 @@ namespace rktk {
             output_file << std::showpos << std::scientific << std::setprecision(
                     std::numeric_limits<T>::max_digits10);
             const VectorXT &x = optimizer.get_current_point();
-            for (std::size_t i = 0; i < NUM_VARS; ++i) {
+            for (std::size_t i = 0; i < num_vars; ++i) {
                 output_file << x[i] << '\n';
             }
             output_file << '\n';

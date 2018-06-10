@@ -13,6 +13,8 @@
 
 namespace dznl {
 
+    enum class StepType { NONE, GRAD, BFGS };
+
     template <typename T>
     class BFGSOptimizer {
 
@@ -40,6 +42,7 @@ namespace dznl {
 
         VectorXT temp;
         std::size_t iter_count;
+        StepType last_step_type;
 
     public: // ===================================================== CONSTRUCTOR
 
@@ -50,7 +53,7 @@ namespace dznl {
                 f(objective_function), g(objective_gradient),
                 x(n), fx(0), gx(n), dg(n),
                 step_size(0), step_dir(n), grad_dir(n), hess_inv(n, n),
-                temp(n), iter_count(0) {
+                temp(n), iter_count(0), last_step_type(StepType::NONE) {
             hess_inv.setIdentity();
         }
 
@@ -65,6 +68,8 @@ namespace dznl {
         std::size_t get_iteration_count() { return iter_count; }
 
         T get_last_step_size() { return step_size; }
+
+        StepType get_last_step_type() { return last_step_type; }
 
     public: // ======================================================== MUTATORS
 
@@ -98,13 +103,13 @@ namespace dznl {
             bfgs_searcher.search(step_size);
             if (grad_searcher.get_best_objective_value() <
                 bfgs_searcher.get_best_objective_value()) {
-                std::cerr << "Gradient" << std::endl;
+                last_step_type = StepType::GRAD;
                 step_dir = grad_dir;
                 reset_hessian();
                 fx = grad_searcher.get_best_objective_value();
                 return grad_searcher.get_best_step_size();
             } else {
-                std::cerr << "BFGS" << std::endl;
+                last_step_type = StepType::BFGS;
                 fx = bfgs_searcher.get_best_objective_value();
                 return bfgs_searcher.get_best_step_size();
             }
