@@ -20,7 +20,7 @@
 #include <Eigen/Core>
 
 // Project-specific headers
-#include "ObjectiveFunction.hpp"
+#include "OrderConditionEvaluator.hpp"
 #include "BFGSOptimizer.hpp"
 
 namespace rktk {

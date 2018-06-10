@@ -13,7 +13,9 @@
 
 namespace dznl {
 
-    enum class StepType { NONE, GRAD, BFGS };
+    enum class StepType {
+        NONE, GRAD, BFGS
+    };
 
     template <typename T>
     class BFGSOptimizer {
