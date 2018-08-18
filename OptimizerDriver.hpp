@@ -21,7 +21,7 @@
 
 // Project-specific headers
 #include "OrderConditionEvaluator.hpp"
-#include "BFGSOptimizer.hpp"
+#include <dznl/BFGSOptimizer.hpp>
 
 namespace rktk {
 
