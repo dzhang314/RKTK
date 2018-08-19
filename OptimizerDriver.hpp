@@ -3,6 +3,7 @@
 
 // C++ standard library headers
 #include <algorithm> // for std::generate
+#include <array>
 #include <chrono>
 #include <cstdint> // for std::uint64_t
 #include <cstdlib>    // for std::exit

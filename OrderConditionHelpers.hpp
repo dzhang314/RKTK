@@ -26,7 +26,7 @@ namespace rktk::detail {
     */
 
     template <typename T>
-    void lrs(T *__restrict__ dst, std::size_t n, const T *__restrict__ mat) {
+    void lrs(T *__restrict dst, std::size_t n, const T *__restrict mat) {
         for (std::size_t i = 0, k = 0; i < n; ++i) {
             dst[i] = mat[k];
             ++k;
@@ -37,8 +37,8 @@ namespace rktk::detail {
     }
 
     template <typename T>
-    void lrs(T *__restrict__ dst_re, T *__restrict__ dst_du, std::size_t n,
-             const T *__restrict__ mat_re, std::size_t mat_di) {
+    void lrs(T *__restrict dst_re, T *__restrict dst_du, std::size_t n,
+             const T *__restrict mat_re, std::size_t mat_di) {
         lrs(dst_re, n, mat_re);
         // TODO: It should be possible to directly calculate the vector index
         // to which the matrix index k corresponds. Low priority because lrs
@@ -75,15 +75,15 @@ namespace rktk::detail {
     }
 
     template <typename T>
-    void elm(T *__restrict__ dst, std::size_t n,
-             const T *__restrict__ v, const T *__restrict__ w) {
+    void elm(T *__restrict dst, std::size_t n,
+             const T *__restrict v, const T *__restrict w) {
         for (std::size_t i = 0; i < n; ++i) { dst[i] = v[i] * w[i]; }
     }
 
     template <typename T>
-    void elm(T *__restrict__ dst_re, T *__restrict__ dst_du, std::size_t n,
-             const T *__restrict__ v_re, const T *__restrict__ v_du,
-             const T *__restrict__ w_re, const T *__restrict__ w_du) {
+    void elm(T *__restrict dst_re, T *__restrict dst_du, std::size_t n,
+             const T *__restrict v_re, const T *__restrict v_du,
+             const T *__restrict w_re, const T *__restrict w_du) {
         elm(dst_re, n, v_re, w_re);
         for (std::size_t i = 0; i < n; ++i) {
             dst_du[i] = v_du[i] * w_re[i] + v_re[i] * w_du[i];
@@ -107,13 +107,13 @@ namespace rktk::detail {
     }
 
     template <typename T>
-    void esq(T *__restrict__ dst, std::size_t n, const T *__restrict__ v) {
+    void esq(T *__restrict dst, std::size_t n, const T *__restrict v) {
         for (std::size_t i = 0; i < n; ++i) { dst[i] = v[i] * v[i]; }
     }
 
     template <typename T>
-    void esq(T *__restrict__ dst_re, T *__restrict__ dst_du, std::size_t n,
-             const T *__restrict__ v_re, const T *__restrict__ v_du) {
+    void esq(T *__restrict dst_re, T *__restrict dst_du, std::size_t n,
+             const T *__restrict v_re, const T *__restrict v_du) {
         esq(dst_re, n, v_re);
         for (std::size_t i = 0; i < n; ++i) {
             dst_du[i] = v_re[i] * v_du[i];
@@ -159,8 +159,8 @@ namespace rktk::detail {
     }
 
     template <typename T>
-    void lvm(T *__restrict__ dst, std::size_t dst_size, std::size_t mat_size,
-             const T *__restrict__ mat, const T *__restrict__ vec) {
+    void lvm(T *__restrict dst, std::size_t dst_size, std::size_t mat_size,
+             const T *__restrict mat, const T *__restrict vec) {
         std::size_t skip = mat_size - dst_size;
         std::size_t index = skip * (skip + 1) / 2 - 1;
         for (std::size_t i = 0; i < dst_size; ++i, index += skip, ++skip) {
@@ -169,10 +169,10 @@ namespace rktk::detail {
     }
 
     template <typename T>
-    void lvm(T *__restrict__ dst_re, T *__restrict__ dst_du,
+    void lvm(T *__restrict dst_re, T *__restrict dst_du,
              std::size_t dst_size, std::size_t mat_size,
-             const T *__restrict__ mat_re, std::size_t mat_di,
-             const T *__restrict__ vec_re, const T *__restrict__ vec_du) {
+             const T *__restrict mat_re, std::size_t mat_di,
+             const T *__restrict vec_re, const T *__restrict vec_du) {
         lvm(dst_re, dst_size, mat_size, mat_re, vec_re);
         std::size_t skip = mat_size - dst_size;
         std::size_t index = skip * (skip + 1) / 2 - 1;
@@ -213,8 +213,8 @@ namespace rktk::detail {
     T sqr(T x) { return x * x; }
 
     template <typename T>
-    T res(std::size_t n, const T *__restrict__ m_re, const T *__restrict__ m_du,
-          std::size_t m_offset, const T *__restrict__ x_re, std::size_t x_di,
+    T res(std::size_t n, const T *__restrict m_re, const T *__restrict m_du,
+          std::size_t m_offset, const T *__restrict x_re, std::size_t x_di,
           std::size_t x_offset, T gamma) {
         const T a = dot(n, m_re + m_offset, x_re + x_offset) - gamma;
         const T b = ((x_offset <= x_di) && (x_di < x_offset + n))
