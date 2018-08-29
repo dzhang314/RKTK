@@ -94,10 +94,10 @@ namespace rktk {
     public: // ==================================================== INITIALIZERS
 
         void initialize_random() {
-            std::uniform_real_distribution<T> unif(T(0), T(1));
+            std::uniform_real_distribution<double> unif(0.0, 1.0);
             VectorXT x(num_vars);
             for (std::size_t i = 0; i < num_vars; ++i) {
-                x[i] = unif(prng);
+                x[i] = static_cast<T>(unif(prng));
             }
             optimizer.set_current_point(x);
             optimizer.set_iteration_count(0);

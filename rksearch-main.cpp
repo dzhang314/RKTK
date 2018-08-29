@@ -6,12 +6,18 @@
 #include <iostream> // for std::cout
 #include <limits> // for std::numeric_limits
 
+// Boost library headers
+#include <boost/multiprecision/cpp_bin_float.hpp>
+#include <boost/multiprecision/eigen.hpp>
+
 // RKTK headers
 #include "OptimizerDriver.hpp"
 
-typedef std::numeric_limits<float> float_limits;
-typedef std::numeric_limits<double> double_limits;
-typedef std::numeric_limits<long double> long_double_limits;
+template <unsigned Digits>
+using boost_float = boost::multiprecision::number<
+    boost::multiprecision::cpp_bin_float<Digits,
+        boost::multiprecision::digit_base_2>,
+    boost::multiprecision::et_off>;
 
 long long int get_positive_integer_argument(char *str) {
     char *end;
@@ -27,6 +33,43 @@ long long int get_positive_integer_argument(char *str) {
     return result;
 }
 
+#define RETURN_PRECISION(T)                                                    \
+        return std::numeric_limits<T>::digits;                                 \
+    } else if (precision == std::numeric_limits<T>::digits) {                  \
+        return std::numeric_limits<T>::digits;                                 \
+    }
+
+#define HANDLE_SMALLEST_PRECISION(T)                                           \
+    if (precision < std::numeric_limits<T>::digits) {                          \
+        std::cout << "Rounding up to " << std::numeric_limits<T>::digits       \
+                  << "-bit precision, which is the smallest "                  \
+                        "available machine precision." << std::endl;           \
+        RETURN_PRECISION(T)
+
+#define HANDLE_MACHINE_PRECISION(T)                                            \
+    else if (precision < std::numeric_limits<T>::digits) {                     \
+        std::cout << "Rounding up to " << std::numeric_limits<T>::digits       \
+                  << "-bit precision, which is the next "                      \
+                        "available machine precision." << std::endl;           \
+        RETURN_PRECISION(T)
+
+#define HANDLE_EXTENDED_PRECISION(T)                                           \
+    else if (precision < std::numeric_limits<T>::digits) {                     \
+        std::cout << "Rounding up to " << std::numeric_limits<T>::digits       \
+                  << "-bit precision, which is the next "                      \
+                        "available extended precision." << std::endl;          \
+        RETURN_PRECISION(T)
+
+#define HANDLE_LARGEST_PRECISION(T)                                            \
+    HANDLE_EXTENDED_PRECISION(T) else {                                        \
+        std::cout << "WARNING: Requested precision exceeds "                   \
+                     "available precision. Rounding down to "                  \
+                  << std::numeric_limits<T>::digits                            \
+                  << "-bit precision, which is the highest "                   \
+                     "available extended precision." << std::endl;             \
+        return std::numeric_limits<T>::digits;                                 \
+    }
+
 int get_precision(int argc, char **argv, int index) {
     if (argc > index) {
         char *end;
@@ -38,46 +81,30 @@ int get_precision(int argc, char **argv, int index) {
         if (read_whole_arg && is_positive) {
             std::cout << "Requested " << precision << "-bit precision."
                       << std::endl;
-            if (precision < float_limits::digits) {
-                std::cout << "Rounding up to " << float_limits::digits
-                          << "-bit precision, which is the smallest "
-                             "available machine precision." << std::endl;
-                return float_limits::digits;
-            } else if (precision == float_limits::digits) {
-                return float_limits::digits;
-            } else if (precision < double_limits::digits) {
-                std::cout << "Rounding up to " << double_limits::digits
-                          << "-bit precision, which is the next "
-                             "available machine precision." << std::endl;
-                return double_limits::digits;
-            } else if (precision == double_limits::digits) {
-                return double_limits::digits;
-            } else if (precision < long_double_limits::digits) {
-                std::cout << "Rounding up to " << long_double_limits::digits
-                          << "-bit precision, which is the next "
-                             "available machine precision." << std::endl;
-                return long_double_limits::digits;
-            } else if (precision == long_double_limits::digits) {
-                return long_double_limits::digits;
-            } else {
-                std::cout << "WARNING: Requested precision exceeds "
-                             "available machine precision. Rounding down to "
-                          << long_double_limits::digits
-                          << "-bit precision, which is the highest "
-                             "available machine precision." << std::endl;
-                return long_double_limits::digits;
-            }
+            HANDLE_SMALLEST_PRECISION(float)
+            HANDLE_MACHINE_PRECISION(double)
+            HANDLE_MACHINE_PRECISION(long double)
+            HANDLE_EXTENDED_PRECISION(boost_float<128>)
+            HANDLE_EXTENDED_PRECISION(boost_float<256>)
+            HANDLE_EXTENDED_PRECISION(boost_float<384>)
+            HANDLE_EXTENDED_PRECISION(boost_float<512>)
+            HANDLE_EXTENDED_PRECISION(boost_float<640>)
+            HANDLE_EXTENDED_PRECISION(boost_float<768>)
+            HANDLE_EXTENDED_PRECISION(boost_float<896>)
+            HANDLE_LARGEST_PRECISION(boost_float<1024>)
         } else {
             std::cout << "WARNING: Could not interpret command-line argument "
-                      << argv[1] << " as a positive integer. Defaulting to"
-                                    " double (" << double_limits::digits
+                      << argv[index] << " as a positive integer."
+                                        " Defaulting to double ("
+                      << std::numeric_limits<double>::digits
                       << "-bit) precision." << std::endl;
-            return double_limits::digits;
+            return std::numeric_limits<double>::digits;
         }
     } else {
-        std::cout << "Defaulting to double (" << double_limits::digits
+        std::cout << "Defaulting to double ("
+                  << std::numeric_limits<double>::digits
                   << "-bit) precision." << std::endl;
-        return double_limits::digits;
+        return std::numeric_limits<double>::digits;
     }
 }
 
@@ -114,9 +141,7 @@ int get_print_precision(int argc, char **argv, int index) {
     return 0;
 }
 
-enum class SearchMode {
-    EXPLORE, REFINE
-};
+enum class SearchMode { EXPLORE, REFINE };
 
 template <typename T>
 void run_main_loop(int order, std::size_t num_steps,
@@ -145,7 +170,7 @@ void run_main_loop(int order, std::size_t num_steps,
             optimizer.write_to_file();
         }
         if (mode == SearchMode::EXPLORE &&
-            optimizer.get_iteration_count() >= 100000) {
+            optimizer.get_iteration_count() >= 100000000) {
             std::cout << "NOTICE: Exceeded maximum number "
                          "of BFGS iterations. Restarting from "
                          "new random point." << std::endl;
@@ -158,6 +183,12 @@ void run_main_loop(int order, std::size_t num_steps,
         }
     }
 }
+
+#define RUN_MAIN_LOOP(T)                                                       \
+    if (prec == std::numeric_limits<T>::digits) {                              \
+        run_main_loop<T>(order, num_stages, argv[6], mode,                     \
+                         print_prec, clocks_between_prints);                   \
+    }
 
 int main(int argc, char **argv) {
     if (argc < 3) {
@@ -187,14 +218,15 @@ int main(int argc, char **argv) {
     const SearchMode mode = (argc > 6)
                             ? SearchMode::REFINE
                             : SearchMode::EXPLORE;
-    if (prec == float_limits::digits) {
-        run_main_loop<float>(order, num_stages, argv[6], mode,
-                             print_prec, clocks_between_prints);
-    } else if (prec == double_limits::digits) {
-        run_main_loop<double>(order, num_stages, argv[6], mode,
-                              print_prec, clocks_between_prints);
-    } else {
-        run_main_loop<long double>(order, num_stages, argv[6], mode,
-                                   print_prec, clocks_between_prints);
-    }
+    RUN_MAIN_LOOP(float)
+    else RUN_MAIN_LOOP(double)
+    else RUN_MAIN_LOOP(long double)
+    else RUN_MAIN_LOOP(boost_float<128>)
+    else RUN_MAIN_LOOP(boost_float<256>)
+    else RUN_MAIN_LOOP(boost_float<384>)
+    else RUN_MAIN_LOOP(boost_float<512>)
+    else RUN_MAIN_LOOP(boost_float<640>)
+    else RUN_MAIN_LOOP(boost_float<768>)
+    else RUN_MAIN_LOOP(boost_float<896>)
+    else RUN_MAIN_LOOP(boost_float<1024>)
 }
