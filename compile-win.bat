@@ -66,12 +66,18 @@ if exist "%ICC_ENV_SCRIPT_PATH%" (
 
 call "%ICC_ENV_SCRIPT_PATH%" intel64 vs2017
 
+del *.obj
+
 icl /Qstd=c++17 /O3 /Qipo /QxHost ^
 /I"%BOOST_INCLUDE_PATH%" /I"%EIGEN_INCLUDE_PATH%" /I"%DZNL_INCLUDE_PATH%" ^
-rksearch-main.cpp /Fe"bin/rksearch-icc.exe" /MT
+rksearch-main.cpp /Fe"bin/rksearch-icc.exe" /MT /EHsc
+
+del *.obj
 
 icl /Qstd=c++17 /fast ^
 /I"%BOOST_INCLUDE_PATH%" /I"%EIGEN_INCLUDE_PATH%" /I"%DZNL_INCLUDE_PATH%" ^
-rksearch-main.cpp /Fe"bin/rksearch-icc-fast.exe" /MT
+rksearch-main.cpp /Fe"bin/rksearch-icc-fast.exe" /MT /EHsc
+
+del *.obj
 
 )
