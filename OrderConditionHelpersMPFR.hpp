@@ -62,7 +62,7 @@ namespace rktk::detail {
         elmm(dst_re, n, v_re, w_re);
         for (std::size_t i = 0; i < n; ++i) {
             mpfr_fmma(dst_du + i, v_du + i, w_re + i, v_re + i, w_du + i,
-                    MPFR_RNDN);
+                      MPFR_RNDN);
         }
     }
 
@@ -114,7 +114,7 @@ namespace rktk::detail {
             dotm(dst_du + i, i + 1, mat_re + idx, vec_du);
             if (idx <= mat_di && mat_di <= idx + i) {
                 mpfr_add(dst_du + i, dst_du + i, vec_re + mat_di - idx,
-                        MPFR_RNDN);
+                         MPFR_RNDN);
             }
         }
     }

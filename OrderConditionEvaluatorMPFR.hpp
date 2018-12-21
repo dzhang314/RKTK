@@ -74,15 +74,9 @@ namespace rktk {
         ~OrderConditionEvaluatorMPFR() {
             mpfr_clear(s);
             mpfr_clear(t);
-            for (std::size_t i = 0; i < table_size; ++i) {
-                mpfr_clear(u[i]);
-            }
-            for (std::size_t i = 0; i < table_size; ++i) {
-                mpfr_clear(v[i]);
-            }
-            for (std::size_t i = 0; i < num_ops; ++i) {
-                mpfr_clear(w[i]);
-            }
+            for (std::size_t i = 0; i < table_size; ++i) { mpfr_clear(u[i]); }
+            for (std::size_t i = 0; i < table_size; ++i) { mpfr_clear(v[i]); }
+            for (std::size_t i = 0; i < num_ops;    ++i) { mpfr_clear(w[i]); }
         }
 
     private: // ================================================================
