@@ -10,9 +10,9 @@
 #include <mpfr.h>
 
 // Project-specific headers
-#include "OrderConditionEvaluator.hpp"
+#include "OrderConditionEvaluatorMPFR.hpp"
 
-long long int get_positive_integer_argument(char *str) {
+static long long int get_positive_integer_argument(char *str) {
     char *end;
     const long long int result = std::strtoll(str, &end, 10);
     const int read_whole_arg = (std::strlen(str) ==
@@ -26,7 +26,7 @@ long long int get_positive_integer_argument(char *str) {
     return result;
 }
 
-static inline void read_input_file(mpfr_ptr x, std::size_t n, char *filename) {
+static void read_input_file(mpfr_ptr x, std::size_t n, char *filename) {
     std::FILE *input_file = std::fopen(filename, "r");
     if (input_file == nullptr) {
         std::cerr << "ERROR: Could not open input file '" << filename

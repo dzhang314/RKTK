@@ -22,9 +22,7 @@ namespace rktk {
 
         static constexpr mpfr_rnd_t rnd = MPFR_RNDN;
 
-        const int order;
         const std::size_t num_ops;
-
         const std::size_t num_stages;
         const std::size_t num_vars;
         const std::size_t table_size;
@@ -35,7 +33,7 @@ namespace rktk {
 
         OrderConditionEvaluatorMPFR(int order, std::size_t num_stages,
                                     mpfr_prec_t prec)
-            : order(order), num_ops(detail::NUM_OPS[order]),
+            : num_ops(detail::NUM_OPS[order]),
               num_stages(num_stages),
               num_vars(num_stages * (num_stages + 1) / 2),
               table_size(num_ops * num_stages -

@@ -26,7 +26,8 @@ namespace rktk::detail {
     *                   derivatives of Runge-Kutta order conditions)
     */
 
-    void lrsm(mpfr_ptr dst, std::size_t dst_size, mpfr_srcptr mat) {
+    static inline void lrsm(mpfr_ptr dst, std::size_t dst_size,
+                            mpfr_srcptr mat) {
         for (std::size_t i = 0, k = 0; i < dst_size; ++i) {
             mpfr_set(dst + i, mat + k, MPFR_RNDN);
             ++k;
@@ -36,8 +37,8 @@ namespace rktk::detail {
         }
     }
 
-    void lrsm(mpfr_ptr dst_re, mpfr_ptr dst_du, std::size_t n,
-              mpfr_srcptr mat_re, std::size_t mat_di) {
+    static inline void lrsm(mpfr_ptr dst_re, mpfr_ptr dst_du, std::size_t n,
+                            mpfr_srcptr mat_re, std::size_t mat_di) {
         lrsm(dst_re, n, mat_re);
         for (std::size_t i = 0, k = 0; i < n; ++i) {
             mpfr_set_si(dst_du + i, k == mat_di, MPFR_RNDN);
@@ -48,15 +49,16 @@ namespace rktk::detail {
         }
     }
 
-    void elmm(mpfr_ptr dst, std::size_t n, mpfr_srcptr v, mpfr_srcptr w) {
+    static inline void elmm(mpfr_ptr dst, std::size_t n,
+                            mpfr_srcptr v, mpfr_srcptr w) {
         for (std::size_t i = 0; i < n; ++i) {
             mpfr_mul(dst + i, v + i, w + i, MPFR_RNDN);
         }
     }
 
-    void elmm(mpfr_ptr dst_re, mpfr_ptr dst_du, std::size_t n,
-              mpfr_srcptr v_re, mpfr_srcptr v_du,
-              mpfr_srcptr w_re, mpfr_srcptr w_du) {
+    static inline void elmm(mpfr_ptr dst_re, mpfr_ptr dst_du, std::size_t n,
+                            mpfr_srcptr v_re, mpfr_srcptr v_du,
+                            mpfr_srcptr w_re, mpfr_srcptr w_du) {
         elmm(dst_re, n, v_re, w_re);
         for (std::size_t i = 0; i < n; ++i) {
             mpfr_fmma(dst_du + i, v_du + i, w_re + i, v_re + i, w_du + i,
@@ -79,7 +81,8 @@ namespace rktk::detail {
         }
     }
 
-    void dotm(mpfr_ptr dst, std::size_t n, mpfr_srcptr v, mpfr_srcptr w) {
+    static inline void dotm(mpfr_ptr dst, std::size_t n,
+                            mpfr_srcptr v, mpfr_srcptr w) {
         if (n == 0) {
             mpfr_set_zero(dst, 0);
         } else {
@@ -90,8 +93,9 @@ namespace rktk::detail {
         }
     }
 
-    void lvmm(mpfr_ptr dst, std::size_t dst_size, std::size_t mat_size,
-              mpfr_srcptr mat, mpfr_srcptr vec) {
+    static inline void lvmm(mpfr_ptr dst, std::size_t dst_size,
+                            std::size_t mat_size, mpfr_srcptr mat,
+                            mpfr_srcptr vec) {
         std::size_t skp = mat_size - dst_size;
         std::size_t idx = skp * (skp + 1) / 2 - 1;
         for (std::size_t i = 0; i < dst_size; ++i, idx += skp, ++skp) {
@@ -99,10 +103,10 @@ namespace rktk::detail {
         }
     }
 
-    void lvmm(mpfr_ptr dst_re, mpfr_ptr dst_du,
-              std::size_t dst_size, std::size_t mat_size,
-              mpfr_srcptr mat_re, std::size_t mat_di,
-              mpfr_srcptr vec_re, mpfr_srcptr vec_du) {
+    static inline void lvmm(mpfr_ptr dst_re, mpfr_ptr dst_du,
+                            std::size_t dst_size, std::size_t mat_size,
+                            mpfr_srcptr mat_re, std::size_t mat_di,
+                            mpfr_srcptr vec_re, mpfr_srcptr vec_du) {
         lvmm(dst_re, dst_size, mat_size, mat_re, vec_re);
         std::size_t skp = mat_size - dst_size;
         std::size_t idx = skp * (skp + 1) / 2 - 1;
