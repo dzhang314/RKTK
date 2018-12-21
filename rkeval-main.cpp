@@ -27,11 +27,14 @@ static long long int get_positive_integer_argument(char *str) {
 }
 
 static void read_input_file(mpfr_ptr x, std::size_t n, char *filename) {
-    std::FILE *input_file = std::fopen(filename, "r");
-    if (input_file == nullptr) {
-        std::cerr << "ERROR: Could not open input file '" << filename
-                  << "'." << std::endl;
-        std::exit(EXIT_FAILURE);
+    std::FILE *input_file = nullptr;
+    if (filename != nullptr) {
+        input_file = std::fopen(filename, "r");
+        if (input_file == nullptr) {
+            std::cerr << "ERROR: Could not open input file '" << filename
+                      << "'." << std::endl;
+            std::exit(EXIT_FAILURE);
+        }
     }
     for (std::size_t i = 0; i < n; ++i) {
         if (mpfr_inp_str(x + i, input_file, 10, MPFR_RNDN) == 0) {
@@ -40,7 +43,7 @@ static void read_input_file(mpfr_ptr x, std::size_t n, char *filename) {
             std::exit(EXIT_FAILURE);
         }
     }
-    std::fclose(input_file);
+    if (input_file != nullptr) { std::fclose(input_file); }
 }
 
 int main(int argc, char **argv) {
@@ -70,7 +73,11 @@ int main(int argc, char **argv) {
     mpfr_init2(result, prec);
     std::vector<mpfr_t> x(num_vars);
     for (std::size_t i = 0; i < num_vars; ++i) { mpfr_init2(x[i], prec); }
-    read_input_file(x[0], num_vars, argv[4]);
+    if (std::strcmp(argv[4], "-") == 0) {
+        read_input_file(x[0], num_vars, nullptr);
+    } else {
+        read_input_file(x[0], num_vars, argv[4]);
+    }
     rktk::OrderConditionEvaluatorMPFR evaluator(
         static_cast<int>(order), num_stages, prec);
     if (argc == 5) {
