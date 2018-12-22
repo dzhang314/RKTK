@@ -84,11 +84,17 @@ int main(int argc, char **argv) {
         evaluator.objective_function(result, x[0]);
         mpfr_out_str(stdout, 10, 0, result, MPFR_RNDN);
         std::cout << std::endl;
-    } else {
-        for (size_t i = 0; i < num_vars; ++i) {
+    } else if (argc == 6) {
+        for (std::size_t i = 0; i < num_vars; ++i) {
             evaluator.objective_function_partial(result, x[0], i);
             mpfr_out_str(stdout, 10, 0, result, MPFR_RNDN);
             std::cout << std::endl;
+        }
+    } else if (argc == 7) {
+        evaluator.print_constraint_values(x[0]);
+    } else {
+        for (std::size_t i = 0; i < num_vars; ++i) {
+            evaluator.print_jacobian_values(x[0], i);
         }
     }
 }

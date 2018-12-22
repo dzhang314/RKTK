@@ -126,6 +126,47 @@ namespace rktk {
             }
         }
 
+        void print_constraint_values(mpfr_srcptr x) {
+            for (std::size_t i = 0, pos = 0; i < num_ops; ++i) {
+                const std::size_t n = num_stages - detail::SIZE_DEFICIT[i];
+                const detail::rkop_t op = detail::OPCODES[i];
+                switch (op.f) {
+                    case detail::rkop::LRS: {
+                        detail::lrsm(u[pos], n, x);
+                    } break;
+                    case detail::rkop::LVM: {
+                        detail::lvmm(u[pos], n, num_stages, x, u[idx(op.a)]);
+                    } break;
+                    case detail::rkop::ESQ: {
+                        detail::esqm(u[pos], n, u[idx(op.a)]);
+                    } break;
+                    case detail::rkop::ELM: {
+                        const std::size_t ad = detail::SIZE_DEFICIT[op.a];
+                        const std::size_t bd = detail::SIZE_DEFICIT[op.b];
+                        const std::size_t md = std::max(ad, bd);
+                        detail::elmm(u[pos], n,
+                                     u[idx(op.a) + md - ad],
+                                     u[idx(op.b) + md - bd]);
+                    } break;
+                }
+                pos += n;
+            }
+            mpfr_set_si(s, -1, rnd);
+            for (std::size_t i = num_vars - num_stages; i < num_vars; ++i) {
+                mpfr_add(s, s, x + i, rnd);
+            }
+            mpfr_out_str(nullptr, 10, 0, s, rnd);
+            std::putchar('\n');
+            for (std::size_t i = 0, pos = 0; i < num_ops; ++i) {
+                const std::size_t n = num_stages - detail::SIZE_DEFICIT[i];
+                detail::dotm(s, n, u[pos], x + num_vars - n);
+                mpfr_sub(s, s, w[i], rnd);
+                mpfr_out_str(nullptr, 10, 0, s, rnd);
+                std::putchar('\n');
+                pos += n;
+            }
+        }
+
         void objective_function_partial(mpfr_ptr g, mpfr_srcptr x,
                                         std::size_t i) {
             for (std::size_t j = 0, pos = 0; j < num_ops; ++j) {
@@ -174,6 +215,53 @@ namespace rktk {
                     mpfr_add(t, t, u[pos + n + i - num_vars], rnd);
                 }
                 mpfr_fma(g, s, t, g, rnd);
+                pos += n;
+            }
+        }
+
+        void print_jacobian_values(mpfr_srcptr x, std::size_t i) {
+            for (std::size_t j = 0, pos = 0; j < num_ops; ++j) {
+                const std::size_t n = num_stages - detail::SIZE_DEFICIT[j];
+                const detail::rkop_t op = detail::OPCODES[j];
+                switch (op.f) {
+                    case detail::rkop::LRS: {
+                        detail::lrsm(u[pos], v[pos], n, x, i);
+                    } break;
+                    case detail::rkop::LVM: {
+                        detail::lvmm(u[pos], v[pos], n, num_stages, x, i,
+                                     u[idx(op.a)], v[idx(op.a)]);
+                    } break;
+                    case detail::rkop::ESQ: {
+                        detail::esqm(u[pos], v[pos], n,
+                                     u[idx(op.a)], v[idx(op.a)]);
+                    } break;
+                    case detail::rkop::ELM: {
+                        const std::size_t ad = detail::SIZE_DEFICIT[op.a];
+                        const std::size_t bd = detail::SIZE_DEFICIT[op.b];
+                        const std::size_t md = std::max(ad, bd);
+                        const std::size_t ao = idx(op.a) + md - ad;
+                        const std::size_t bo = idx(op.b) + md - bd;
+                        detail::elmm(u[pos], v[pos], n,
+                                     u[ao], v[ao], u[bo], v[bo]);
+                    } break;
+                }
+                pos += n;
+            }
+            if (i >= num_vars - num_stages) {
+                mpfr_set_ui(s, +1, rnd);
+            } else {
+                mpfr_set_zero(s, 0);
+            }
+            mpfr_out_str(nullptr, 10, 0, s, rnd);
+            std::putchar('\n');
+            for (std::size_t j = 0, pos = 0; j < num_ops; ++j) {
+                const std::size_t n = num_stages - detail::SIZE_DEFICIT[j];
+                detail::dotm(s, n, v[pos], x + num_vars - n);
+                if (i + n >= num_vars) {
+                    mpfr_add(s, s, u[pos + n + i - num_vars], rnd);
+                }
+                mpfr_out_str(nullptr, 10, 0, s, rnd);
+                std::putchar('\n');
                 pos += n;
             }
         }
