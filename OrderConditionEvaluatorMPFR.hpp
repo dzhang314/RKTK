@@ -162,8 +162,7 @@ namespace rktk {
                                      u[idx(op.a)], v[idx(op.a)]);
                     } break;
                     case detail::rkop::ESQ: {
-                        detail::esqm(v[pos], n,
-                                     u[idx(op.a)], v[idx(op.a)]);
+                        detail::esqm(v[pos], n, u[idx(op.a)], v[idx(op.a)]);
                     } break;
                     case detail::rkop::ELM: {
                         const std::size_t ad = detail::SIZE_DEFICIT[op.a];
@@ -171,8 +170,7 @@ namespace rktk {
                         const std::size_t md = std::max(ad, bd);
                         const std::size_t ao = idx(op.a) + md - ad;
                         const std::size_t bo = idx(op.b) + md - bd;
-                        detail::elmm(v[pos], n,
-                                     u[ao], v[ao], u[bo], v[bo]);
+                        detail::elmm(v[pos], n, u[ao], v[ao], u[bo], v[bo]);
                     } break;
                 }
                 pos += n;
@@ -257,11 +255,13 @@ namespace rktk {
         }
 
         void print_partial_values(mpfr_srcptr x) {
+            populate_u(x);
             for (std::size_t i = 0; i < num_vars; ++i) {
-                populate_uv(x, i);
+                populate_v(x, i);
                 if (i >= num_vars - num_stages) {
                     mpfr_set_si(r, -1, rnd);
-                    for (std::size_t j = num_vars - num_stages; j < num_vars; ++j) {
+                    for (std::size_t j = num_vars - num_stages;
+                         j < num_vars; ++j) {
                         mpfr_add(r, r, x + j, rnd);
                     }
                     mpfr_mul_2ui(r, r, 1, rnd);
@@ -285,13 +285,10 @@ namespace rktk {
         }
 
         void print_jacobian_values(mpfr_srcptr x) {
+            populate_u(x);
             for (std::size_t i = 0; i < num_vars; ++i) {
-                populate_uv(x, i);
-                if (i >= num_vars - num_stages) {
-                    mpfr_set_ui(s, +1, rnd);
-                } else {
-                    mpfr_set_zero(s, 0);
-                }
+                populate_v(x, i);
+                mpfr_set_si(s, i + num_stages >= num_vars, rnd);
                 mpfr_println(s);
                 for (std::size_t j = 0, pos = 0; j < num_ops; ++j) {
                     const std::size_t n = num_stages - detail::SIZE_DEFICIT[j];
