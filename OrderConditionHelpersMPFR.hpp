@@ -37,6 +37,17 @@ namespace rktk::detail {
         }
     }
 
+    static inline void lrsm(mpfr_ptr dst_du, std::size_t n,
+                            std::size_t mat_di) {
+        for (std::size_t i = 0, k = 0; i < n; ++i) {
+            mpfr_set_si(dst_du + i, k == mat_di, MPFR_RNDN);
+            ++k;
+            for (std::size_t j = 0; j < i; ++j, ++k) {
+                mpfr_add_si(dst_du + i, dst_du + i, k == mat_di, MPFR_RNDN);
+            }
+        }
+    }
+
     static inline void lrsm(mpfr_ptr dst_re, mpfr_ptr dst_du, std::size_t n,
                             mpfr_srcptr mat_re, std::size_t mat_di) {
         lrsm(dst_re, n, mat_re);
@@ -56,6 +67,15 @@ namespace rktk::detail {
         }
     }
 
+    static inline void elmm(mpfr_ptr dst_du, std::size_t n,
+                            mpfr_srcptr v_re, mpfr_srcptr v_du,
+                            mpfr_srcptr w_re, mpfr_srcptr w_du) {
+        for (std::size_t i = 0; i < n; ++i) {
+            mpfr_fmma(dst_du + i, v_du + i, w_re + i, v_re + i, w_du + i,
+                      MPFR_RNDN);
+        }
+    }
+
     static inline void elmm(mpfr_ptr dst_re, mpfr_ptr dst_du, std::size_t n,
                             mpfr_srcptr v_re, mpfr_srcptr v_du,
                             mpfr_srcptr w_re, mpfr_srcptr w_du) {
@@ -69,6 +89,14 @@ namespace rktk::detail {
     static inline void esqm(mpfr_ptr dst, std::size_t n, mpfr_srcptr v) {
         for (std::size_t i = 0; i < n; ++i) {
             mpfr_sqr(dst + i, v + i, MPFR_RNDN);
+        }
+    }
+
+    static inline void esqm(mpfr_ptr dst_du, std::size_t n,
+                            mpfr_srcptr v_re, mpfr_srcptr v_du) {
+        for (std::size_t i = 0; i < n; ++i) {
+            mpfr_mul(dst_du + i, v_re + i, v_du + i, MPFR_RNDN);
+            mpfr_mul_2ui(dst_du + i, dst_du + i, 1, MPFR_RNDN);
         }
     }
 
@@ -100,6 +128,21 @@ namespace rktk::detail {
         std::size_t idx = skp * (skp + 1) / 2 - 1;
         for (std::size_t i = 0; i < dst_size; ++i, idx += skp, ++skp) {
             dotm(dst + i, i + 1, mat + idx, vec);
+        }
+    }
+
+    static inline void lvmm(mpfr_ptr dst_du, std::size_t dst_size,
+                            std::size_t mat_size,
+                            mpfr_srcptr mat_re, std::size_t mat_di,
+                            mpfr_srcptr vec_re, mpfr_srcptr vec_du) {
+        std::size_t skp = mat_size - dst_size;
+        std::size_t idx = skp * (skp + 1) / 2 - 1;
+        for (std::size_t i = 0; i < dst_size; ++i, idx += skp, ++skp) {
+            dotm(dst_du + i, i + 1, mat_re + idx, vec_du);
+            if (idx <= mat_di && mat_di <= idx + i) {
+                mpfr_add(dst_du + i, dst_du + i, vec_re + mat_di - idx,
+                         MPFR_RNDN);
+            }
         }
     }
 

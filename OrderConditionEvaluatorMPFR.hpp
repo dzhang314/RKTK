@@ -149,6 +149,36 @@ namespace rktk {
             }
         }
 
+        void populate_v(mpfr_srcptr x, std::size_t i) {
+            for (std::size_t j = 0, pos = 0; j < num_ops; ++j) {
+                const std::size_t n = num_stages - detail::SIZE_DEFICIT[j];
+                const detail::rkop_t op = detail::OPCODES[j];
+                switch (op.f) {
+                    case detail::rkop::LRS: {
+                        detail::lrsm(v[pos], n, i);
+                    } break;
+                    case detail::rkop::LVM: {
+                        detail::lvmm(v[pos], n, num_stages, x, i,
+                                     u[idx(op.a)], v[idx(op.a)]);
+                    } break;
+                    case detail::rkop::ESQ: {
+                        detail::esqm(v[pos], n,
+                                     u[idx(op.a)], v[idx(op.a)]);
+                    } break;
+                    case detail::rkop::ELM: {
+                        const std::size_t ad = detail::SIZE_DEFICIT[op.a];
+                        const std::size_t bd = detail::SIZE_DEFICIT[op.b];
+                        const std::size_t md = std::max(ad, bd);
+                        const std::size_t ao = idx(op.a) + md - ad;
+                        const std::size_t bo = idx(op.b) + md - bd;
+                        detail::elmm(v[pos], n,
+                                     u[ao], v[ao], u[bo], v[bo]);
+                    } break;
+                }
+                pos += n;
+            }
+        }
+
     public: // =================================================================
 
         void objective_function(mpfr_ptr f, mpfr_srcptr x) {
