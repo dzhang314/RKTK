@@ -69,8 +69,6 @@ int main(int argc, char **argv) {
                   << "its number of stages." << std::endl;
         std::exit(EXIT_FAILURE);
     }
-    mpfr_t result;
-    mpfr_init2(result, prec);
     std::vector<mpfr_t> x(num_vars);
     for (std::size_t i = 0; i < num_vars; ++i) { mpfr_init2(x[i], prec); }
     if (std::strcmp(argv[4], "-") == 0) {
@@ -81,20 +79,12 @@ int main(int argc, char **argv) {
     rktk::OrderConditionEvaluatorMPFR evaluator(
         static_cast<int>(order), num_stages, prec);
     if (argc == 5) {
-        evaluator.objective_function(result, x[0]);
-        mpfr_out_str(stdout, 10, 0, result, MPFR_RNDN);
-        std::cout << std::endl;
+        evaluator.print_objective_value(x[0]);
     } else if (argc == 6) {
-        for (std::size_t i = 0; i < num_vars; ++i) {
-            evaluator.objective_function_partial(result, x[0], i);
-            mpfr_out_str(stdout, 10, 0, result, MPFR_RNDN);
-            std::cout << std::endl;
-        }
+        evaluator.print_partial_values(x[0]);
     } else if (argc == 7) {
         evaluator.print_constraint_values(x[0]);
     } else {
-        for (std::size_t i = 0; i < num_vars; ++i) {
-            evaluator.print_jacobian_values(x[0], i);
-        }
+        evaluator.print_jacobian_values(x[0]);
     }
 }
