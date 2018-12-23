@@ -90,6 +90,7 @@ namespace rktk {
         void mpfr_println(mpfr_srcptr x) {
             mpfr_out_str(nullptr, 10, 0, x, rnd);
             std::putchar('\n');
+            std::fflush(stdout);
         }
 
         void populate_u(mpfr_srcptr x) {

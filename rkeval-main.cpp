@@ -69,22 +69,40 @@ int main(int argc, char **argv) {
                   << "its number of stages." << std::endl;
         std::exit(EXIT_FAILURE);
     }
+    rktk::OrderConditionEvaluatorMPFR evaluator(
+        static_cast<int>(order), num_stages, prec);
     std::vector<mpfr_t> x(num_vars);
     for (std::size_t i = 0; i < num_vars; ++i) { mpfr_init2(x[i], prec); }
     if (std::strcmp(argv[4], "-") == 0) {
-        read_input_file(x[0], num_vars, nullptr);
+        while (true) {
+            read_input_file(x[0], num_vars, nullptr);
+            selector: switch (getchar()) {
+                case 'A':
+                    evaluator.print_objective_value(x[0]);
+                    break;
+                case 'B':
+                    evaluator.print_partial_values(x[0]);
+                    break;
+                case 'C':
+                    evaluator.print_constraint_values(x[0]);
+                    break;
+                case 'D':
+                    evaluator.print_jacobian_values(x[0]);
+                    break;
+                default:
+                    goto selector;
+            }
+        }
     } else {
         read_input_file(x[0], num_vars, argv[4]);
-    }
-    rktk::OrderConditionEvaluatorMPFR evaluator(
-        static_cast<int>(order), num_stages, prec);
-    if (argc == 5) {
-        evaluator.print_objective_value(x[0]);
-    } else if (argc == 6) {
-        evaluator.print_partial_values(x[0]);
-    } else if (argc == 7) {
-        evaluator.print_constraint_values(x[0]);
-    } else {
-        evaluator.print_jacobian_values(x[0]);
+        if (argc == 5) {
+            evaluator.print_objective_value(x[0]);
+        } else if (argc == 6) {
+            evaluator.print_partial_values(x[0]);
+        } else if (argc == 7) {
+            evaluator.print_constraint_values(x[0]);
+        } else {
+            evaluator.print_jacobian_values(x[0]);
+        }
     }
 }
