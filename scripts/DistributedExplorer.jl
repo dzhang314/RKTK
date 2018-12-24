@@ -4,7 +4,7 @@ using Distributed: @distributed, @everywhere, pmap
     using Dates: now, format, @dateformat_str
     using LinearAlgebra: dot, norm
     using Printf: @sprintf
-    push!(LOAD_PATH, "C:/Users/Zhang/")
+    push!(LOAD_PATH, @__DIR__)
     using GoldenSectionSearch: golden_section_search
     using DZMisc: log, rooted_tree_count, orthonormalize_columns
 end # @everywhere
@@ -40,9 +40,10 @@ end # @everywhere
     const RK_PREC = 192
 
     Base.MPFR.setprecision(RK_PREC)
-    const RKEVAL_PROC = open(
-        `C:\\Programs\\rkeval.exe $(ORDER) $(NUM_STAGES) $(RK_PREC) -`,
-        read=true, write=true)
+    const RKEVAL_CMD = (Sys.iswindows()
+        ? `C:\\Programs\\rkeval.exe $(ORDER) $(NUM_STAGES) $(RK_PREC) -`
+        : `/opt/rkeval $(ORDER) $(NUM_STAGES) $(RK_PREC) -`)
+    const RKEVAL_PROC = open(RKEVAL_CMD, read=true, write=true)
 
     function rkeval_write(RKEVAL_PROC, xs, code)
         for x in xs
