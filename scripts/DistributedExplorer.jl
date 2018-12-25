@@ -169,11 +169,11 @@ end
 end
 
 @everywhere function perturb_wrapper(x, direction, i)
-    log("    Moving point ", i, " by distance ",
-        @sprintf("%g", norm(direction)), ".")
+    # log("    Moving point ", i, " by distance ",
+    #     @sprintf("%g", norm(direction)), ".")
     x_new = perturb(x, direction, 1.0)
-    log("    Successfully moved point ", i, " by distance ",
-        @sprintf("%g", norm(x_new - x)), ".")
+    # log("    Successfully moved point ", i, " by distance ",
+    #     @sprintf("%g", norm(x_new - x)), ".")
     x_new
 end
 
@@ -189,12 +189,12 @@ const POINTS = [BigFloat.(point)
 @assert all(length(p) == NUM_VARS for p in POINTS)
 
 while true
-    log("Computing forces...")
+    # log("Computing forces...")
     forces_energies = pmap(force_energy, [POINTS for _ = 1 : length(POINTS)], 1 : length(POINTS))
     forces = [p[1] for p in forces_energies]
     total_energy = sum(p[2] for p in forces_energies) / 2
     log("Total energy: ", total_energy)
-    log("Moving points...")
+    # log("Moving points...")
     forces *= sqrt(big(length(POINTS))) / norm(vcat(forces...)) / 5000
     new_points = pmap(perturb_wrapper, POINTS, forces, 1 : length(POINTS))
     for i = 1 : length(POINTS)
