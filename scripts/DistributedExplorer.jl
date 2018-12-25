@@ -106,12 +106,20 @@ end # @everywhere
     vec - jac * (transpose(jac) * vec)
 end
 
-@everywhere function force(points, i)
-    log("    Computing force on point ", i, ".")
-    force = sum((points[i] - points[j]) / norm(points[i] - points[j])^3
-                for j = 1 : length(points) if i != j)
-    log("    Computing Jacobian projection for point ", i, ".")
-    jacobian_projection(points[i], force)
+@everywhere function force_energy(points, i)
+    # log("    Computing force on point ", i, ".")
+    force = zeros(BigFloat, NUM_VARS)
+    energy = zero(BigFloat)
+    for j = 1 : length(points)
+        if i != j
+            displ = points[i] - points[j]
+            inv_dist = inv(norm(displ))
+            force += inv_dist^3 * displ
+            energy += inv_dist
+        end
+    end
+    # log("    Computing Jacobian projection for point ", i, ".")
+    jacobian_projection(points[i], force), energy
 end
 
 @everywhere function constrain(x)
@@ -125,19 +133,19 @@ end
         x_new = x_old + direction
         obj_new = rkobj(x_new)
         if 100 * obj_new < obj_old
-            log("        Accepted step: ", @sprintf("%g", obj_new))
+            # log("        Accepted step: ", @sprintf("%g", obj_new))
             x_old, obj_old = x_new, obj_new
         else
-            log("        Rejected step: ", @sprintf("%g", obj_new))
+            # log("        Rejected step: ", @sprintf("%g", obj_new))
             step_size, obj_new = golden_section_search(
                 h -> rkobj(x_new + h * direction), 0, 1, 10)
             x_new = x_old + step_size * direction
             if 2 * obj_new < obj_old
-                log("        Accepted GSS step: ", @sprintf("%g", obj_new),
-                    " (step size ", @sprintf("%g", step_size), ")")
+                # log("        Accepted GSS step: ", @sprintf("%g", obj_new),
+                #     " (step size ", @sprintf("%g", step_size), ")")
                 x_old, obj_old = x_new, obj_new
             else
-                log("        Rejected GSS step: ", @sprintf("%g", obj_new))
+                # log("        Rejected GSS step: ", @sprintf("%g", obj_new))
                 break
             end
         end
@@ -182,7 +190,10 @@ const POINTS = [BigFloat.(point)
 
 while true
     log("Computing forces...")
-    forces = pmap(force, [POINTS for _ = 1 : length(POINTS)], 1 : length(POINTS))
+    forces_energies = pmap(force_energy, [POINTS for _ = 1 : length(POINTS)], 1 : length(POINTS))
+    forces = [p[1] for p in forces_energies]
+    total_energy = sum(p[2] for p in forces_energies) / 2
+    log("Total energy: ", total_energy)
     log("Moving points...")
     forces *= sqrt(big(length(POINTS))) / norm(vcat(forces...)) / 3000
     new_points = pmap(perturb_wrapper, POINTS, forces, 1 : length(POINTS))
