@@ -1,4 +1,10 @@
 using Distributed: @distributed, @everywhere, pmap
+using Dates: now, format, @dateformat_str
+using LinearAlgebra: dot, norm
+using Printf: @sprintf
+push!(LOAD_PATH, @__DIR__)
+using GoldenSectionSearch: golden_section_search
+using DZMisc: log, rooted_tree_count, orthonormalize_columns
 
 @everywhere begin
     using Dates: now, format, @dateformat_str
@@ -195,7 +201,7 @@ while true
     total_energy = sum(p[2] for p in forces_energies) / 2
     log("Total energy: ", total_energy)
     log("Moving points...")
-    forces *= sqrt(big(length(POINTS))) / norm(vcat(forces...)) / 3000
+    forces *= sqrt(big(length(POINTS))) / norm(vcat(forces...)) / 5000
     new_points = pmap(perturb_wrapper, POINTS, forces, 1 : length(POINTS))
     for i = 1 : length(POINTS)
         POINTS[i] = new_points[i]
