@@ -1,10 +1,4 @@
 using Distributed: @distributed, @everywhere, pmap
-using Dates: now, format, @dateformat_str
-using LinearAlgebra: dot, norm
-using Printf: @sprintf
-push!(LOAD_PATH, @__DIR__)
-using GoldenSectionSearch: golden_section_search
-using DZMisc: log, rooted_tree_count, orthonormalize_columns
 
 @everywhere begin
     using Dates: now, format, @dateformat_str
