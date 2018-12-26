@@ -1,5 +1,5 @@
-module GoldenSectionSearch
 __precompile__(false)
+module GoldenSectionSearch
 
 export golden_section_search
 
