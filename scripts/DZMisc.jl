@@ -1,4 +1,5 @@
 module DZMisc
+__precompile__(false)
 
 export log, rooted_tree_count, orthonormalize_columns
 
