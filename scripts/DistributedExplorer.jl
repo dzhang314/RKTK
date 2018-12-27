@@ -187,7 +187,7 @@ end
         x_new
     else
         multiplier /= 2
-        if multiplier < 0.25
+        if multiplier < 0.5
             log("WARNING: Lowering perturbation step size for point ", i,
                 " to ", multiplier, " * ", approximate_norm(direction), ".")
         end
