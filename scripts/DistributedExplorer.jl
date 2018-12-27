@@ -15,6 +15,7 @@ using Distributed: @everywhere, pmap
     import Base: ==, *
     ==(x::TripleF64, y::Int) = (x.x0 == y)
     *(x::Int, y::TripleF64) = Float64(x) * y
+    setprecision(180)
 end
 
 @everywhere function approximate_norm(x::Vector{T}) where {T <: Real}
