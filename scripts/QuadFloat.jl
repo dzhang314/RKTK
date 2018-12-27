@@ -145,22 +145,22 @@ end
 end
 
 @inline function *(a::Quad{T}, b::Quad{T}) where {T <: IEEEFloat}
-    p0, q0 = two_prod(a.x0, b.x0)
-    p1, q1 = two_prod(a.x0, b.x1)
-    p2, q2 = two_prod(a.x1, b.x0)
-    p3, q3 = two_prod(a.x0, b.x2)
-    p4, q4 = two_prod(a.x1, b.x1)
-    p5, q5 = two_prod(a.x2, b.x0)
-    p1, p2, q0 = three_sum(p1, p2, q0)
-    p2, q1, q2 = three_sum(p2, q1, q2)
-    p3, p4, p5 = three_sum(p3, p4, p5)
-    s0, t0 = two_sum(p2, p3)
-    s1, t1 = two_sum(q1, p4)
-    s2 = q2 + p5
-    s1, t0 = two_sum(s1, t0)
-    s2 += t0 + t1
-    s1 += a.x0*b.x3 + a.x1*b.x2 + a.x2*b.x1 + a.x3*b.x0 + q0 + q3 + q4 + q5
-    Quad{T}(renormalize(p0, p1, s0, s1, s2)...)
+    p0_0, q0_1 = two_prod(a.x0, b.x0)
+    p1_1, q1_2 = two_prod(a.x0, b.x1)
+    p2_1, q2_2 = two_prod(a.x1, b.x0)
+    p3_2, q3_3 = two_prod(a.x0, b.x2)
+    p4_2, q4_3 = two_prod(a.x1, b.x1)
+    p5_2, q5_3 = two_prod(a.x2, b.x0)
+    f1_1, f3_2, f0_3 = three_sum(p1_1, p2_1, q0_1)
+    f4_2, f2_3, f5_4 = three_sum(f3_2, q1_2, q2_2)
+    g1_2, g2_3, g4_4 = three_sum(p3_2, p4_2, p5_2)
+    s0_2, h3_3 = two_sum(f4_2, g1_2)
+    v1_3, t1_4 = two_sum(f2_3, g2_3)
+    s2_4 = f5_4 + g4_4
+    s1_3, t0_4 = two_sum(v1_3, h3_3)
+    s2_4 += t0_4 + t1_4
+    s1_3 += a.x0*b.x3 + a.x1*b.x2 + a.x2*b.x1 + a.x3*b.x0 + f0_3 + q3_3 + q4_3 + q5_3
+    Quad{T}(renormalize(p0_0, f1_1, s0_2, s1_3, s2_4)...)
 end
 
 @inline function *(a::Quad{T}, b::T) where {T <: IEEEFloat}
