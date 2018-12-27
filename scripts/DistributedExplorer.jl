@@ -150,27 +150,27 @@ log("Successfully read initial points.")
 @everywhere function constrain(x)
     x_old, obj_old = x, approximate_objective(x)
     while true
-        log("        Computing Jacobian and residual...")
+        # log("        Computing Jacobian and residual...")
         compute_residuals(x_old)
         compute_jacobian(x_old)
-        log("        Computing step direction...")
+        # log("        Computing step direction...")
         direction = transpose(SHORT_JAC) \ SHORT_RES
         x_new = x_old - direction
         obj_new = approximate_objective(x_new)
         if 100 * obj_new < obj_old
-            log("        Accepted step: ", @sprintf("%g", obj_new))
+            # log("        Accepted step: ", @sprintf("%g", obj_new))
             x_old, obj_old = x_new, obj_new
         else
-            log("        Rejected step: ", @sprintf("%g", obj_new))
+            # log("        Rejected step: ", @sprintf("%g", obj_new))
             step_size, obj_new = golden_section_search(
                 h -> approximate_objective(x_new - h * direction), 0, 1, 10)
             x_new = x_old - step_size * direction
             if 2 * obj_new < obj_old
-                log("        Accepted GSS step: ", @sprintf("%g", obj_new),
-                    " (step size ", @sprintf("%g", step_size), ")")
+                # log("        Accepted GSS step: ", @sprintf("%g", obj_new),
+                #     " (step size ", @sprintf("%g", step_size), ")")
                 x_old, obj_old = x_new, obj_new
             else
-                log("        Rejected GSS step: ", @sprintf("%g", obj_new))
+                # log("        Rejected GSS step: ", @sprintf("%g", obj_new))
                 break
             end
         end
@@ -195,11 +195,11 @@ end
 
 @everywhere function perturb_wrapper(pts, direction, i)
     x = sdata(pts)[:,i]
-    log("    Moving point ", i, " by distance ",
-        @sprintf("%g", approximate_norm(direction)), ".")
+    # log("    Moving point ", i, " by distance ",
+    #     @sprintf("%g", approximate_norm(direction)), ".")
     x_new = perturb(x, direction, 1.0)
-    log("    Successfully moved point ", i, " by distance ",
-        @sprintf("%g", approximate_norm(x_new - x)), ".")
+    # log("    Successfully moved point ", i, " by distance ",
+    #     @sprintf("%g", approximate_norm(x_new - x)), ".")
     x_new
 end
 
@@ -216,12 +216,12 @@ end
 # constrain(newpt)
 
 while true
-    log("Computing forces...")
+    # log("Computing forces...")
     forces_energies = pmap(approximate_coulomb_force_energy,
         [POINTS for _ = 1 : NUM_POINTS], 1 : NUM_POINTS)
     log("Total energy: ", sum(p[2] for p in forces_energies) / 2)
     forces = [p[1] for p in forces_energies]
-    log("Moving points...")
+    # log("Moving points...")
     forces *= sqrt(NUM_POINTS) / approximate_norm(vcat(forces...)) / 5000
     new_points = pmap(perturb_wrapper,
         [POINTS for _ = 1 : NUM_POINTS], forces, 1 : NUM_POINTS)
