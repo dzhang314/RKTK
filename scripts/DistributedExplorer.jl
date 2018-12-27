@@ -126,28 +126,6 @@ end
 
 ################################################################################
 
-const INPUT_FILENAME = maximum(filename
-    for filename in readdir()
-    if isfile(filename) && startswith(filename, "RKTK-POINTS-")
-                        && endswith(filename, ".txt"))
-
-log("Reading initial points from data file: ", INPUT_FILENAME)
-const INPUT_POINTS = [TripleF64.(BigFloat.(point))
-    for point in split.(split(read(INPUT_FILENAME, String), "\n\n"))]
-@assert all(length(p) == NUM_VARS for p in INPUT_POINTS)
-const NUM_POINTS = length(INPUT_POINTS)
-
-const POINTS = SharedArray{TripleF64}((NUM_VARS, NUM_POINTS))
-for j = 1 : NUM_POINTS
-    pt = INPUT_POINTS[j]
-    for i = 1 : NUM_VARS
-        POINTS[i, j] = pt[i]
-    end
-end
-log("Successfully read initial points.")
-
-################################################################################
-
 @everywhere function constrain(x)
     x_old, obj_old = x, approximate_objective(x)
     while true
@@ -206,6 +184,28 @@ end
     #     @sprintf("%g", approximate_norm(x_new - x)), ".")
     x_new
 end
+
+################################################################################
+
+const INPUT_FILENAME = maximum(filename
+    for filename in readdir()
+    if isfile(filename) && startswith(filename, "RKTK-POINTS-")
+                        && endswith(filename, ".txt"))
+
+log("Reading initial points from data file: ", INPUT_FILENAME)
+const INPUT_POINTS = [TripleF64.(BigFloat.(point))
+    for point in split.(split(read(INPUT_FILENAME, String), "\n\n"))]
+@assert all(length(p) == NUM_VARS for p in INPUT_POINTS)
+const NUM_POINTS = length(INPUT_POINTS)
+
+const POINTS = SharedArray{TripleF64}((NUM_VARS, NUM_POINTS))
+for j = 1 : NUM_POINTS
+    pt = INPUT_POINTS[j]
+    for i = 1 : NUM_VARS
+        POINTS[i, j] = pt[i]
+    end
+end
+log("Successfully read initial points.")
 
 ################################################################################
 
