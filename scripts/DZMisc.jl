@@ -1,7 +1,9 @@
 __precompile__(false)
 module DZMisc
 
-export log, rooted_tree_count, orthonormalize_columns
+export dbl, log, rooted_tree_count, orthonormalize_columns!
+
+dbl(x::T) where {T <: Number} = x + x
 
 function log(args...)
     println(args...)
@@ -21,7 +23,7 @@ function rooted_tree_count(n::Int)
     sum(numerator.(counts))
 end
 
-function orthonormalize_columns(mat::Matrix{T}) where {T}
+function orthonormalize_columns!(mat::Matrix{T}) where {T}
     m = size(mat, 1)
     n = size(mat, 2)
     for j = 1 : n
