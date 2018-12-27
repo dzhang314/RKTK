@@ -2,7 +2,7 @@ __precompile__(false)
 baremodule IEEEAccurateArithmetic
 
 export two_sum, quick_two_sum, three_sum, three_sum2,
-    two_diff, two_prod, two_sqr, renormalize
+    two_diff, two_prod, two_sqr, renormalize, renormalize3
 
 using Base: +, -, *, fma, IEEEFloat, @inline
 
@@ -76,6 +76,25 @@ end
     r1, t0 = quick_two_sum(t0, s)
     r2, r3 = quick_two_sum(t0, t1)
     r0, r1, r2, r3
+end
+
+@inline function renormalize3(
+        c0::T, c1::T, c2::T, c3::T) where {T <: IEEEFloat}
+    s, t2 = quick_two_sum(c2, c3)
+    s, t1 = quick_two_sum(c1, s)
+    r0, t0 = quick_two_sum(c0, s)
+    s, t1 = quick_two_sum(t1, t2)
+    r1, t0 = quick_two_sum(t0, s)
+    r2 = t0 + t1
+    r0, r1, r2
+end
+
+@inline function renormalize3(
+        c0::T, c1::T, c2::T) where {T <: IEEEFloat}
+    s, t1 = quick_two_sum(c1, c2)
+    r0, t0 = quick_two_sum(c0, s)
+    r1, r2 = quick_two_sum(t0, t1)
+    r0, r1, r2
 end
 
 end # baremodule IEEEAccurateArithmetic

@@ -205,16 +205,6 @@ end
 
 ################################################################################
 
-# function constrain_force()
-
-# force, energy = approximate_coulomb_force_energy(POINTS, 1)
-# compute_orthonormalized_jacobian(POINTS[:,1])
-# force -= APX_SHORT_JAC * (transpose(APX_SHORT_JAC) * force)
-
-# newpt = POINTS[:,1] + QuadF64.(0.0001 * force)
-
-# constrain(newpt)
-
 while true
     # log("Computing forces...")
     forces_energies = pmap(approximate_coulomb_force_energy,
