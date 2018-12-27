@@ -13,8 +13,8 @@ using Distributed: @everywhere, pmap
     using GoldenSectionSearch: golden_section_search
 
     import Base: ==, *
-    ==(x::QuadF64, y::Int) = (x.x0 == y)
-    *(x::Int, y::QuadF64) = Float64(x) * y
+    ==(x::TripleF64, y::Int) = (x.x0 == y)
+    *(x::Int, y::TripleF64) = Float64(x) * y
 end
 
 @everywhere function approximate_norm(x::Vector{T}) where {T <: Real}
@@ -56,7 +56,7 @@ end
 
 ################################################################################
 
-@everywhere const EVALUATOR = RKOCEvaluator{QuadF64}(10, 16)
+@everywhere const EVALUATOR = RKOCEvaluator{TripleF64}(10, 16)
 @everywhere const NUM_VARS = 136
 @everywhere const NUM_CONSTRS = 1205
 
@@ -72,11 +72,11 @@ end
 
 @everywhere const CONSTR_DIM = length(CONSTR_IDXS)
 
-@everywhere const TEMP_RES = Vector{QuadF64}(undef, NUM_CONSTRS)
-@everywhere const SHORT_RES = Vector{QuadF64}(undef, CONSTR_DIM)
+@everywhere const TEMP_RES = Vector{TripleF64}(undef, NUM_CONSTRS)
+@everywhere const SHORT_RES = Vector{TripleF64}(undef, CONSTR_DIM)
 @everywhere const APX_SHORT_RES = Vector{Float64}(undef, CONSTR_DIM)
-@everywhere const TEMP_JAC = Matrix{QuadF64}(undef, NUM_CONSTRS, NUM_VARS)
-@everywhere const SHORT_JAC = Matrix{QuadF64}(undef, NUM_VARS, CONSTR_DIM)
+@everywhere const TEMP_JAC = Matrix{TripleF64}(undef, NUM_CONSTRS, NUM_VARS)
+@everywhere const SHORT_JAC = Matrix{TripleF64}(undef, NUM_VARS, CONSTR_DIM)
 @everywhere const APX_SHORT_JAC = Matrix{Float64}(undef, NUM_VARS, CONSTR_DIM)
 
 ################################################################################
@@ -131,12 +131,12 @@ const INPUT_FILENAME = maximum(filename
                         && endswith(filename, ".txt"))
 
 log("Reading initial points from data file: ", INPUT_FILENAME)
-const INPUT_POINTS = [QuadF64.(BigFloat.(point))
+const INPUT_POINTS = [TripleF64.(BigFloat.(point))
     for point in split.(split(read(INPUT_FILENAME, String), "\n\n"))]
 @assert all(length(p) == NUM_VARS for p in INPUT_POINTS)
 const NUM_POINTS = length(INPUT_POINTS)
 
-const POINTS = SharedArray{QuadF64}((NUM_VARS, NUM_POINTS))
+const POINTS = SharedArray{TripleF64}((NUM_VARS, NUM_POINTS))
 for j = 1 : NUM_POINTS
     pt = INPUT_POINTS[j]
     for i = 1 : NUM_VARS
@@ -178,7 +178,7 @@ log("Successfully read initial points.")
     x_old, obj_old
 end
 
-@everywhere const EPS_THREE_HALVES = Float64(BigFloat(2)^-318)
+@everywhere const EPS_THREE_HALVES = Float64(BigFloat(2)^-200)
 
 @everywhere function perturb(x, direction, multiplier)
     x_new, obj = constrain(x + multiplier * direction)
