@@ -132,7 +132,7 @@ const INPUT_FILENAME = maximum(filename
 
 log("Reading initial points from data file: ", INPUT_FILENAME)
 const INPUT_POINTS = [QuadF64.(BigFloat.(point))
-    for point in split.(split(read(INPUT_FILENAME, String), "\n\n"))][1:4]
+    for point in split.(split(read(INPUT_FILENAME, String), "\n\n"))]
 @assert all(length(p) == NUM_VARS for p in INPUT_POINTS)
 const NUM_POINTS = length(INPUT_POINTS)
 
