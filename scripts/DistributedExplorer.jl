@@ -180,16 +180,19 @@ end
 
 @everywhere const EPS_THREE_HALVES = Float64(BigFloat(2)^-200)
 
-@everywhere function perturb(x, direction, multiplier)
+@everywhere function perturb(x, direction, multiplier, i)
     x_new, obj = constrain(x + multiplier * direction)
     if obj < EPS_THREE_HALVES
         x_new
     else
         multiplier /= 2
-        log("WARNING: Lowering perturbation step size to ", multiplier, ".")
+        if multiplier < 0.25
+            log("WARNING: Lowering perturbation step size for point ", i,
+                " to ", multiplier, " * ", approximate_norm(direction), ".")
+        end
         # x_new = perturb(x, direction, multiplier)
         # perturb(x_new, direction, multiplier)
-        perturb(x, direction, multiplier)
+        perturb(x, direction, multiplier, i)
     end
 end
 
@@ -197,7 +200,7 @@ end
     x = sdata(pts)[:,i]
     # log("    Moving point ", i, " by distance ",
     #     @sprintf("%g", approximate_norm(direction)), ".")
-    x_new = perturb(x, direction, 1.0)
+    x_new = perturb(x, direction, 1.0, i)
     # log("    Successfully moved point ", i, " by distance ",
     #     @sprintf("%g", approximate_norm(x_new - x)), ".")
     x_new
