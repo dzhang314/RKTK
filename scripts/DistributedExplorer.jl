@@ -230,5 +230,6 @@ while true
     end
     filename = format(now(), dateformat"RKTK-POINT\S-yyyymmdd-HHMMSS-sss.txt")
     log("Writing points to file: ", filename)
-    write(filename, join([join(string.(BigFloat.(exact.(POINTS[:,i]))), "\n") for i = 1 : NUM_POINTS], "\n\n") * "\n")
+    write(filename, join([join(string.(BigFloat.(exact.(POINTS[:,i]))), "\n")
+        for i = 1 : NUM_POINTS], "\n\n") * "\n")
 end
