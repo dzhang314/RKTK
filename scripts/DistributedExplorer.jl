@@ -20,39 +20,33 @@ end
 
 @everywhere function approximate_norm(x::Vector{T}) where {T <: Real}
     result = 0.0
-    for i = 1 : length(x)
-        result += abs2(Float64(x[i]))
+    @simd for i = 1 : length(x)
+        @inbounds result += abs2(Float64(x[i]))
     end
     sqrt(result)
 end
 
 @everywhere function approximate_coulomb_force_energy(
         points::Matrix{T}, i::Int) where {T <: Real}
-    displ = Vector{Float64}(undef, size(points, 1))
-    force = zeros(Float64, size(points, 1))
+    dim, num_points = size(points)
+    displ = Vector{Float64}(undef, dim)
+    force = zeros(Float64, dim)
     energy = zero(Float64)
-    for j = 1 : size(points, 2)
+    for j = 1 : num_points
         if i != j
-            @simd ivdep for k = 1 : size(points, 1)
+            @simd ivdep for k = 1 : dim
                 @inbounds displ[k] = (
                     Float64(points[k,i]) - Float64(points[k,j]))
             end
             inv_dist = inv(approximate_norm(displ))
             energy += inv_dist
             inv_dist *= abs2(inv_dist)
-            @simd ivdep for k = 1 : size(points, 1)
+            @simd ivdep for k = 1 : dim
                 @inbounds force[k] += inv_dist * displ[k]
             end
         end
     end
     force, energy
-end
-
-@everywhere function approximate_coulomb_force_energy(
-        points::SharedArray{T,2}, i::Int) where {T <: Real}
-    force, energy = approximate_coulomb_force_energy(sdata(points), i)
-    compute_orthonormalized_jacobian(points[:,i])
-    force - APX_SHORT_JAC * (transpose(APX_SHORT_JAC) * force), energy
 end
 
 ################################################################################
@@ -93,8 +87,8 @@ end
 
 @everywhere function compute_residuals(x)
     evaluate_residuals!(TEMP_RES, x, EVALUATOR)
-    for j = 1 : length(CONSTR_IDXS)
-        SHORT_RES[j] = TEMP_RES[CONSTR_IDXS[j]]
+    @simd ivdep for j = 1 : length(CONSTR_IDXS)
+        @inbounds SHORT_RES[j] = TEMP_RES[CONSTR_IDXS[j]]
     end
 end
 
@@ -102,8 +96,8 @@ end
     evaluate_jacobian!(TEMP_JAC, x, EVALUATOR)
     for j = 1 : length(CONSTR_IDXS)
         k = CONSTR_IDXS[j]
-        for i = 1 : NUM_VARS
-            SHORT_JAC[i, j] = TEMP_JAC[k, i]
+        @simd ivdep for i = 1 : NUM_VARS
+            @inbounds SHORT_JAC[i, j] = TEMP_JAC[k, i]
         end
     end
 end
@@ -112,16 +106,25 @@ end
     evaluate_jacobian!(TEMP_JAC, x, EVALUATOR)
     for j = 1 : length(CONSTR_IDXS)
         k = CONSTR_IDXS[j]
-        for i = 1 : NUM_VARS
-            SHORT_JAC[i, j] = TEMP_JAC[k, i]
+        @simd ivdep for i = 1 : NUM_VARS
+            @inbounds SHORT_JAC[i, j] = TEMP_JAC[k, i]
         end
     end
     orthonormalize_columns!(SHORT_JAC)
     for j = 1 : length(CONSTR_IDXS)
-        for i = 1 : NUM_VARS
+        @simd ivdep for i = 1 : NUM_VARS
+            # Something weird is going on here. Adding @inbounds to the next
+            # line segfaults, but no array access is ever out-of-bounds.
             APX_SHORT_JAC[i, j] = Float64(SHORT_JAC[i, j])
         end
     end
+end
+
+@everywhere function approximate_coulomb_force_energy(
+        points::SharedArray{T,2}, i::Int) where {T <: Real}
+    force, energy = approximate_coulomb_force_energy(sdata(points), i)
+    compute_orthonormalized_jacobian(points[:,i])
+    force - APX_SHORT_JAC * (transpose(APX_SHORT_JAC) * force), energy
 end
 
 ################################################################################
@@ -176,7 +179,7 @@ end
 end
 
 @everywhere function perturb_wrapper(pts, direction, i)
-    x = sdata(pts)[:,i]
+    x = pts[:,i]
     # log("    Moving point ", i, " by distance ",
     #     @sprintf("%g", approximate_norm(direction)), ".")
     x_new = perturb(x, direction, 1.0, i)
@@ -201,8 +204,8 @@ const NUM_POINTS = length(INPUT_POINTS)
 const POINTS = SharedArray{TripleF64}((NUM_VARS, NUM_POINTS))
 for j = 1 : NUM_POINTS
     pt = INPUT_POINTS[j]
-    for i = 1 : NUM_VARS
-        POINTS[i, j] = pt[i]
+    @simd ivdep for i = 1 : NUM_VARS
+        @inbounds POINTS[i, j] = pt[i]
     end
 end
 log("Successfully read initial points.")
@@ -220,8 +223,9 @@ while true
     new_points = pmap(perturb_wrapper,
         [POINTS for _ = 1 : NUM_POINTS], forces, 1 : NUM_POINTS)
     for i = 1 : NUM_POINTS
-        for j = 1 : NUM_VARS
-            POINTS[j, i] = new_points[i][j]
+        pt = new_points[i]
+        @simd ivdep for j = 1 : NUM_VARS
+            @inbounds POINTS[j, i] = pt[j]
         end
     end
     filename = format(now(), dateformat"RKTK-POINT\S-yyyymmdd-HHMMSS-sss.txt")
