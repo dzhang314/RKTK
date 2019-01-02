@@ -1,21 +1,19 @@
 using Distributed: @everywhere, pmap
 
 @everywhere begin
-    using LinearAlgebra: normalize!
+    using LinearAlgebra: qr!
     using Dates: @dateformat_str, now, format
     using Printf: @sprintf
     using SharedArrays
 
     push!(LOAD_PATH, @__DIR__)
-    using QuadFloat
+    using MultiprecisionFloats
     using RKTK
     using DZMisc: log, orthonormalize_columns!
     using GoldenSectionSearch: golden_section_search
 
-    import Base: ==, *
-    ==(x::TripleF64, y::Int) = (x.x0 == y)
-    *(x::Int, y::TripleF64) = Float64(x) * y
-    setprecision(180)
+    const AccurateReal = Float64x2
+    setprecision(256)
 end
 
 @everywhere function approximate_norm(x::Vector{T}) where {T <: Real}
@@ -51,7 +49,7 @@ end
 
 ################################################################################
 
-@everywhere const EVALUATOR = RKOCEvaluator{TripleF64}(10, 16)
+@everywhere const EVALUATOR = RKOCEvaluator{AccurateReal}(10, 16)
 @everywhere const NUM_VARS = 136
 @everywhere const NUM_CONSTRS = 1205
 
@@ -67,11 +65,12 @@ end
 
 @everywhere const CONSTR_DIM = length(CONSTR_IDXS)
 
-@everywhere const TEMP_RES = Vector{TripleF64}(undef, NUM_CONSTRS)
-@everywhere const SHORT_RES = Vector{TripleF64}(undef, CONSTR_DIM)
+@everywhere const TEMP_RES = Vector{AccurateReal}(undef, NUM_CONSTRS)
+@everywhere const SHORT_RES = Vector{AccurateReal}(undef, CONSTR_DIM)
 @everywhere const APX_SHORT_RES = Vector{Float64}(undef, CONSTR_DIM)
-@everywhere const TEMP_JAC = Matrix{TripleF64}(undef, NUM_CONSTRS, NUM_VARS)
-@everywhere const SHORT_JAC = Matrix{TripleF64}(undef, NUM_VARS, CONSTR_DIM)
+@everywhere const TEMP_JAC = Matrix{AccurateReal}(undef, NUM_CONSTRS, NUM_VARS)
+@everywhere const SHORT_JAC = Matrix{AccurateReal}(undef, NUM_VARS, CONSTR_DIM)
+@everywhere const SHORT_JCT = Matrix{AccurateReal}(undef, CONSTR_DIM, NUM_VARS)
 @everywhere const APX_SHORT_JAC = Matrix{Float64}(undef, NUM_VARS, CONSTR_DIM)
 
 ################################################################################
@@ -97,7 +96,7 @@ end
     for j = 1 : length(CONSTR_IDXS)
         k = CONSTR_IDXS[j]
         @simd ivdep for i = 1 : NUM_VARS
-            @inbounds SHORT_JAC[i, j] = TEMP_JAC[k, i]
+            @inbounds SHORT_JCT[j, i] = TEMP_JAC[k, i]
         end
     end
 end
@@ -136,7 +135,7 @@ end
         compute_residuals(x_old)
         compute_jacobian(x_old)
         # log("        Computing step direction...")
-        direction = transpose(SHORT_JAC) \ SHORT_RES
+        direction = qr!(SHORT_JCT) \ SHORT_RES
         x_new = x_old - direction
         obj_new = approximate_objective(x_new)
         if 100 * obj_new < obj_old
@@ -157,10 +156,11 @@ end
             end
         end
     end
+    # log("        Final objective value: ", @sprintf("%g", obj_old))
     x_old, obj_old
 end
 
-@everywhere const EPS_THREE_HALVES = Float64(BigFloat(2)^-200)
+@everywhere const EPS_THREE_HALVES = Float64(BigFloat(2)^-120)
 
 @everywhere function perturb(x, direction, multiplier, i)
     x_new, obj = constrain(x + multiplier * direction)
@@ -168,9 +168,9 @@ end
         x_new
     else
         multiplier /= 2
-        if multiplier < 0.5
-            log("WARNING: Lowering perturbation step size for point ", i,
-                " to ", multiplier, " * ", approximate_norm(direction), ".")
+        if multiplier < 1.0
+            log("WARNING: Lowering step size for point ", i, " (", obj,
+                ") to ", multiplier, " * ", approximate_norm(direction), ".")
         end
         # x_new = perturb(x, direction, multiplier)
         # perturb(x_new, direction, multiplier)
@@ -196,19 +196,19 @@ const INPUT_FILENAME = maximum(filename
                         && endswith(filename, ".txt"))
 
 log("Reading initial points from data file: ", INPUT_FILENAME)
-const INPUT_POINTS = [TripleF64.(BigFloat.(point))
+const INPUT_POINTS = [AccurateReal.(BigFloat.(point))
     for point in split.(split(read(INPUT_FILENAME, String), "\n\n"))]
 @assert all(length(p) == NUM_VARS for p in INPUT_POINTS)
 const NUM_POINTS = length(INPUT_POINTS)
 
-const POINTS = SharedArray{TripleF64}((NUM_VARS, NUM_POINTS))
+const POINTS = SharedArray{AccurateReal}((NUM_VARS, NUM_POINTS))
 for j = 1 : NUM_POINTS
     pt = INPUT_POINTS[j]
     @simd ivdep for i = 1 : NUM_VARS
         @inbounds POINTS[i, j] = pt[i]
     end
 end
-log("Successfully read initial points.")
+log("Successfully read ", NUM_POINTS, " initial points.")
 
 ################################################################################
 
@@ -230,6 +230,6 @@ while true
     end
     filename = format(now(), dateformat"RKTK-POINT\S-yyyymmdd-HHMMSS-sss.txt")
     log("Writing points to file: ", filename)
-    write(filename, join([join(string.(BigFloat.(exact.(POINTS[:,i]))), "\n")
+    write(filename, join([join(string.(BigFloat.(POINTS[:,i])), "\n")
         for i = 1 : NUM_POINTS], "\n\n") * "\n")
 end
