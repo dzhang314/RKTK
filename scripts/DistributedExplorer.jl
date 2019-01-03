@@ -138,7 +138,7 @@ end
         direction = qr!(SHORT_JCT) \ SHORT_RES
         x_new = x_old - direction
         obj_new = approximate_objective(x_new)
-        if 100 * obj_new < obj_old
+        if obj_new < obj_old
             # log("        Accepted step: ", @sprintf("%g", obj_new))
             x_old, obj_old = x_new, obj_new
         else
@@ -146,7 +146,7 @@ end
             step_size, obj_new = golden_section_search(
                 h -> approximate_objective(x_new - h * direction), 0, 1, 10)
             x_new = x_old - step_size * direction
-            if 2 * obj_new < obj_old
+            if obj_new < obj_old
                 # log("        Accepted GSS step: ", @sprintf("%g", obj_new),
                 #     " (step size ", @sprintf("%g", step_size), ")")
                 x_old, obj_old = x_new, obj_new
@@ -160,20 +160,21 @@ end
     x_old, obj_old
 end
 
-@everywhere const EPS_THREE_HALVES = Float64(BigFloat(2)^-120)
+@everywhere const EPS_THREE_HALVES = Float64(BigFloat(2)^-130)
 
 @everywhere function perturb(x, direction, multiplier, i)
     x_new, obj = constrain(x + multiplier * direction)
     if obj < EPS_THREE_HALVES
+        # log("Successfully moved point ", i, " (", obj,
+        #     ") by ", multiplier * approximate_norm(direction), ".")
         x_new
     else
-        multiplier /= 2
-        if multiplier < 1.0
-            log("WARNING: Lowering step size for point ", i, " (", obj,
-                ") to ", multiplier, " * ", approximate_norm(direction), ".")
+        multiplier /= 4
+        if multiplier < 0.0625
+            multiplier = 0.0
+            log("WARNING: Failed to move point ", i, " (", obj,
+                ") by ", approximate_norm(direction), ".")
         end
-        # x_new = perturb(x, direction, multiplier)
-        # perturb(x_new, direction, multiplier)
         perturb(x, direction, multiplier, i)
     end
 end

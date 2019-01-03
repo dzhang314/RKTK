@@ -158,7 +158,7 @@ dbl(x::MultiFloat64{N}) where {N} = scale(2.0, x)
 
 import Base: +, *, /, sqrt
 
-for i = 2 : 4
+for i = 2 : 8
     eval(two_pass_renorm_func(i, sloppy=true))
     eval(MF64_alias(i))
     eval(MF64_add_func(i, sloppy=true))
@@ -171,6 +171,7 @@ end
 
 for (_, v) in MultiprecisionFloatCodeGenerator.MPADD_CACHE; eval(v); end
 
-export Float64x2, Float64x3, Float64x4
+export Float64x2, Float64x3, Float64x4,
+    Float64x5, Float64x6, Float64x7, Float64x8
 
 end # module MultiprecisionFloats
