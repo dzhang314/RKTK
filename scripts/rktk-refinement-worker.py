@@ -8,6 +8,10 @@ import uuid
 REQUEST_DIR = "requests"
 OUTPUT_DIR = "refined"
 
+RKSEARCH_EXE_PATH = "C:/Users/Zhang/Documents/GitHub/rktk/bin/rksearch-gcc.exe"
+PYTHON_EXE_PATH = "C:/Program Files (x86)/IntelSWTools/intelpython3/python.exe"
+CLEANUP_SCRIPT_PATH = "C:/Users/Zhang/Documents/GitHub/rktk/scripts/rktk-cleanup.py"
+
 WORKER_ID = str(uuid.uuid4()).upper()
 WORKER_DIR = "WORKER-" + WORKER_ID
 WORKER_LOG = open("WORKER-" + WORKER_ID + ".log", 'w+')
@@ -20,29 +24,23 @@ log("Initializing RKTK refinement worker with ID {0}.".format(WORKER_ID))
 os.mkdir(WORKER_DIR)
 
 if os.path.isdir(REQUEST_DIR):
-    log("Posting requests in existing \"" +
-        REQUEST_DIR + "\" directory.")
+    log("Posting requests in existing \"" + REQUEST_DIR + "\" directory.")
 else:
     try:
         os.mkdir(REQUEST_DIR)
-        log("Posting requests in newly-created \"" +
-            REQUEST_DIR + "\" directory.")
+        log("Posting requests in new \"" + REQUEST_DIR + "\" directory.")
     except FileExistsError:
-        log("ERROR: A file named \"" +
-            REQUEST_DIR + "\" already exists.")
+        log("ERROR: A file named \"" + REQUEST_DIR + "\" already exists.")
         sys.exit(1)
 
 if os.path.isdir(OUTPUT_DIR):
-    log("Sending output to existing \"" +
-        OUTPUT_DIR + "\" directory.")
+    log("Sending output to existing \"" + OUTPUT_DIR + "\" directory.")
 else:
     try:
         os.mkdir(OUTPUT_DIR)
-        log("Sending output to newly-created \"" +
-            OUTPUT_DIR + "\" directory.")
+        log("Sending output to new \"" + OUTPUT_DIR + "\" directory.")
     except FileExistsError:
-        log("ERROR: A file named \"" +
-            OUTPUT_DIR + "\" already exists.")
+        log("ERROR: A file named \"" + OUTPUT_DIR + "\" already exists.")
         sys.exit(1)
 
 def work():
@@ -54,8 +52,7 @@ def work():
     while True:
         for entry in os.scandir(os.path.join(REQUEST_DIR, REQUEST_NAME)):
             INPUT_FILE = entry.name
-            os.rename(entry.path,
-                      os.path.join(WORKER_DIR, INPUT_FILE))
+            os.rename(entry.path, os.path.join(WORKER_DIR, INPUT_FILE))
             served = True
         if served:
             log("Request {0} has been served.".format(REQUEST_NAME))
@@ -65,15 +62,13 @@ def work():
         log("Null request received. Terminating worker.")
         return False
     log("Running RKSearch refinement job.")
-    subprocess.run(['../bin/rksearch', '64', '10', '0', INPUT_FILE],
+    subprocess.run([RKSEARCH_EXE_PATH, '9', '12', '128', '1', '10', INPUT_FILE],
                    cwd=WORKER_DIR, stderr=subprocess.DEVNULL)
     log("Running cleanup script.")
-    subprocess.run(['python3', '../rktk-cleanup.py'],
-                   cwd=WORKER_DIR)
+    subprocess.run([PYTHON_EXE_PATH, CLEANUP_SCRIPT_PATH], cwd=WORKER_DIR)
     log("Submitting job results.")
     for entry in os.scandir(WORKER_DIR):
-        os.rename(entry.path,
-                  os.path.join(OUTPUT_DIR, entry.name))
+        os.rename(entry.path, os.path.join(OUTPUT_DIR, entry.name))
     log("Job completed.")
     return True
 

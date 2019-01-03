@@ -50,13 +50,13 @@ while True:
     created = requests - timedout - served.keys()
     for name in created:
         served[name] = present
-        for item in os.scandir(TASK_DIR):
+        for item in list(os.scandir(TASK_DIR))[::-1]:
             print("Serving request {0} with task {1}.".format(name, item.path), flush=True)
             os.rename(item.path,
                       os.path.join(REQUEST_DIR, name, item.name))
             break
         else:
-            print("Serving request {0} with null task.".format(name, item.path), flush=True)
+            print("Serving request {0} with null task.".format(name), flush=True)
             with open(os.path.join(REQUEST_DIR, name, "EXHAUSTED"),
                       'a') as dummyfile:
                 pass

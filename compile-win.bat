@@ -1,7 +1,7 @@
 ::::::::::::::::::::::::::::::::::::::::::::::: ENVIRONMENT VARIABLE DEFINITIONS
 
-set BOOST_INCLUDE_PATH=C:\Programs\boost_1_68_0
-set EIGEN_INCLUDE_PATH=C:\Programs\eigen-eigen-b3f3d4950030
+set BOOST_INCLUDE_PATH=C:\Programs\boost_1_69_0
+set EIGEN_INCLUDE_PATH=C:\Programs\eigen-eigen-323c052e1731
 set DZNL_INCLUDE_PATH=C:\Users\Zhang\Documents\GitHub\dznl
 
 set MSVC_ENV_SCRIPT_PATH=C:\Program Files (x86)\Microsoft Visual Studio\^
@@ -44,40 +44,40 @@ rksearch-main.cpp -o"bin/rksearch-clang-fast.exe"
 
 ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::: MSVC
 
-call "%MSVC_ENV_SCRIPT_PATH%"
+REM call "%MSVC_ENV_SCRIPT_PATH%"
 
-del *.obj
+REM del *.obj
 
-cl /std:c++17 /EHsc /O2 /GL /favor:blend ^
-/I"%BOOST_INCLUDE_PATH%" /I"%EIGEN_INCLUDE_PATH%" /I"%DZNL_INCLUDE_PATH%" ^
-rksearch-main.cpp /Fe"bin/rksearch-msvc.exe" /MT
+REM cl /std:c++17 /EHsc /O2 /GL /favor:blend ^
+REM /I"%BOOST_INCLUDE_PATH%" /I"%EIGEN_INCLUDE_PATH%" /I"%DZNL_INCLUDE_PATH%" ^
+REM rksearch-main.cpp /Fe"bin/rksearch-msvc.exe" /MT
 
-del *.obj
+REM del *.obj
 
-cl /std:c++17 /EHsc /O2 /GL /favor:blend /fp:fast ^
-/I"%BOOST_INCLUDE_PATH%" /I"%EIGEN_INCLUDE_PATH%" /I"%DZNL_INCLUDE_PATH%" ^
-rksearch-main.cpp /Fe"bin/rksearch-msvc-fast.exe" /MT
+REM cl /std:c++17 /EHsc /O2 /GL /favor:blend /fp:fast ^
+REM /I"%BOOST_INCLUDE_PATH%" /I"%EIGEN_INCLUDE_PATH%" /I"%DZNL_INCLUDE_PATH%" ^
+REM rksearch-main.cpp /Fe"bin/rksearch-msvc-fast.exe" /MT
 
-del *.obj
+REM del *.obj
 
 :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::: ICC
 
-if exist "%ICC_ENV_SCRIPT_PATH%" (
+REM if exist "%ICC_ENV_SCRIPT_PATH%" (
 
-call "%ICC_ENV_SCRIPT_PATH%" intel64 vs2017
+REM call "%ICC_ENV_SCRIPT_PATH%" intel64 vs2017
 
-del *.obj
+REM del *.obj
 
-icl /Qstd=c++17 /O3 /Qipo /QxHost ^
-/I"%BOOST_INCLUDE_PATH%" /I"%EIGEN_INCLUDE_PATH%" /I"%DZNL_INCLUDE_PATH%" ^
-rksearch-main.cpp /Fe"bin/rksearch-icc.exe" /MT /EHsc
+REM icl /Qstd=c++17 /O3 /Qipo /QxHost ^
+REM /I"%BOOST_INCLUDE_PATH%" /I"%EIGEN_INCLUDE_PATH%" /I"%DZNL_INCLUDE_PATH%" ^
+REM rksearch-main.cpp /Fe"bin/rksearch-icc.exe" /MT /EHsc
 
-del *.obj
+REM del *.obj
 
-icl /Qstd=c++17 /fast ^
-/I"%BOOST_INCLUDE_PATH%" /I"%EIGEN_INCLUDE_PATH%" /I"%DZNL_INCLUDE_PATH%" ^
-rksearch-main.cpp /Fe"bin/rksearch-icc-fast.exe" /MT /EHsc
+REM icl /Qstd=c++17 /fast ^
+REM /I"%BOOST_INCLUDE_PATH%" /I"%EIGEN_INCLUDE_PATH%" /I"%DZNL_INCLUDE_PATH%" ^
+REM rksearch-main.cpp /Fe"bin/rksearch-icc-fast.exe" /MT /EHsc
 
-del *.obj
+REM del *.obj
 
-)
+REM )
