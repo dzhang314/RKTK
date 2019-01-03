@@ -76,7 +76,7 @@ end
 ################################################################################
 
 @everywhere function approximate_objective(x)
-    evaluate_residuals!(TEMP_RES, x, EVALUATOR)
+    evaluate_residual!(TEMP_RES, x, EVALUATOR)
     result = zero(Float64)
     for i = 1 : NUM_CONSTRS
         result += abs2(Float64(TEMP_RES[i]))
@@ -84,8 +84,8 @@ end
     result
 end
 
-@everywhere function compute_residuals(x)
-    evaluate_residuals!(TEMP_RES, x, EVALUATOR)
+@everywhere function compute_residual(x)
+    evaluate_residual!(TEMP_RES, x, EVALUATOR)
     @simd ivdep for j = 1 : length(CONSTR_IDXS)
         @inbounds SHORT_RES[j] = TEMP_RES[CONSTR_IDXS[j]]
     end
@@ -132,7 +132,7 @@ end
     x_old, obj_old = x, approximate_objective(x)
     while true
         # log("        Computing Jacobian and residual...")
-        compute_residuals(x_old)
+        compute_residual(x_old)
         compute_jacobian(x_old)
         # log("        Computing step direction...")
         direction = qr!(SHORT_JCT) \ SHORT_RES

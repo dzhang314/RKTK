@@ -1,7 +1,7 @@
 __precompile__(false)
 module RKTK
 
-export RKOCEvaluator, evaluate_residuals!, evaluate_jacobian!
+export RKOCEvaluator, evaluate_residual!, evaluate_jacobian!
 
 using DZMisc: dbl, rooted_tree_count
 using RKTKData: GAMMA, SIZE_DEFICIT, TOTAL_SIZE_DEFICIT, OPCODES
@@ -143,7 +143,7 @@ function populate_v!(evaluator::RKOCEvaluator{T},
     end
 end
 
-function evaluate_residuals!(res::Vector{T},
+function evaluate_residual!(res::Vector{T},
         x::Vector{T}, evaluator::RKOCEvaluator{T}) where {T <: Real}
     res[1] = -one(T)
     b_index = evaluator.num_vars - evaluator.num_stages + 1
