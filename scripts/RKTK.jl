@@ -27,8 +27,7 @@ function RKOCEvaluator{T}(order::Int, num_stages::Int) where {T <: Real}
     RKOCEvaluator{T}(order, num_stages, num_vars, num_constrs, inv_gamma, u, v)
 end
 
-function populate_u_init!(evaluator::RKOCEvaluator{T},
-        x::Vector{T}) where {T <: Real}
+function populate_u_init!(evaluator::RKOCEvaluator{T}, x::Vector{T}) where {T <: Real}
     k = 1
     for i = 1 : evaluator.num_stages - 1
         @inbounds evaluator.u[i] = x[k]
@@ -39,22 +38,19 @@ function populate_u_init!(evaluator::RKOCEvaluator{T},
     end
 end
 
-function populate_v_init!(evaluator::RKOCEvaluator{T},
-        x::Vector{T}, var_index::Int) where {T <: Real}
+function populate_v_init!(evaluator::RKOCEvaluator{T}, x::Vector{T}, var_idx::Int) where {T <: Real}
     j = 0
     for i = 1 : evaluator.num_stages - 1
-        @inbounds evaluator.v[i] = (j == var_index)
+        @inbounds evaluator.v[i] = (j == var_idx)
         j += 1
         for _ = 1 : i - 1
-            @inbounds evaluator.v[i] += (j == var_index)
+            @inbounds evaluator.v[i] += (j == var_idx)
             j += 1
         end
     end
 end
 
-@inline function dot_inplace(n::Int,
-        v::Vector{T}, v_offset::Int,
-        w::Vector{T}, w_offset::Int) where {T <: Real}
+@inline function dot_inplace(n::Int, v::Vector{T}, v_offset::Int, w::Vector{T}, w_offset::Int) where {T <: Real}
     @inbounds result = v[v_offset + 1] * w[w_offset + 1]
     @simd for i = 2 : n
         @inbounds result += v[v_offset + i] * w[w_offset + i]
@@ -62,27 +58,24 @@ end
     result
 end
 
-@inline function subarray_offset(
-        evaluator::RKOCEvaluator{T}, i::Int) where {T <: Real}
+@inline subarray_offset(evaluator::RKOCEvaluator{T}, i::Int) where {T <: Real} =
     @inbounds evaluator.num_stages * i - TOTAL_SIZE_DEFICIT[i + 1]
-end
 
-function populate_u!(evaluator::RKOCEvaluator{T},
-        x::Vector{T}) where {T <: Real}
+function populate_u!(evaluator::RKOCEvaluator{T}, x::Vector{T}) where {T <: Real}
     populate_u_init!(evaluator, x)
     pos = evaluator.num_stages - 1
     u = evaluator.u # local alias for convenience
-    for op_index = 2 : evaluator.num_constrs - 1
-        @inbounds n = evaluator.num_stages - SIZE_DEFICIT[op_index]
-        @inbounds op, a, b = OPCODES[op_index - 1]
+    for constr_idx = 3 : evaluator.num_constrs
+        @inbounds n = evaluator.num_stages - SIZE_DEFICIT[constr_idx - 1]
+        @inbounds op, a, b = OPCODES[constr_idx - 2]
         if op
             ao = subarray_offset(evaluator, a)
-            skp = evaluator.num_stages - n
-            idex = div(skp * (skp + 1), 2) - 1
+            skip_idx = evaluator.num_stages - n
+            j = div(skip_idx * (skip_idx + 1), 2) - 1
             for i = 1 : n
-                @inbounds u[pos+i] = dot_inplace(i, x, idex, u, ao)
-                idex += skp
-                skp += 1
+                @inbounds u[pos+i] = dot_inplace(i, x, j, u, ao)
+                j += skip_idx
+                skip_idx += 1
             end
         elseif a == b
             ao = subarray_offset(evaluator, a)
@@ -103,26 +96,25 @@ function populate_u!(evaluator::RKOCEvaluator{T},
     end
 end
 
-function populate_v!(evaluator::RKOCEvaluator{T},
-        x::Vector{T}, var_index::Int) where {T <: Real}
-    populate_v_init!(evaluator, x, var_index)
+function populate_v!(evaluator::RKOCEvaluator{T}, x::Vector{T}, var_idx::Int) where {T <: Real}
+    populate_v_init!(evaluator, x, var_idx)
     pos = evaluator.num_stages - 1
     u = evaluator.u
     v = evaluator.v
-    for j = 2 : evaluator.num_constrs - 1
-        @inbounds n = evaluator.num_stages - SIZE_DEFICIT[j]
-        @inbounds op, a, b = OPCODES[j - 1]
+    for constr_idx = 3 : evaluator.num_constrs
+        @inbounds n = evaluator.num_stages - SIZE_DEFICIT[constr_idx - 1]
+        @inbounds op, a, b = OPCODES[constr_idx - 2]
         if op
             ao = subarray_offset(evaluator, a)
-            skp = evaluator.num_stages - n
-            idex = div(skp * (skp + 1), 2) - 1
+            skip_idx = evaluator.num_stages - n
+            j = div(skip_idx * (skip_idx + 1), 2) - 1
             for i = 1 : n
-                @inbounds v[pos+i] = dot_inplace(i, x, idex, v, ao)
-                if idex <= var_index < idex + i
-                    @inbounds v[pos+i] += u[ao + var_index - idex + 1]
+                @inbounds v[pos+i] = dot_inplace(i, x, j, v, ao)
+                if j <= var_idx < j + i
+                    @inbounds v[pos+i] += u[ao + var_idx - j + 1]
                 end
-                idex += skp
-                skp += 1
+                j += skip_idx
+                skip_idx += 1
             end
         elseif a == b
             ao = subarray_offset(evaluator, a)
@@ -143,42 +135,37 @@ function populate_v!(evaluator::RKOCEvaluator{T},
     end
 end
 
-function evaluate_residual!(res::Vector{T},
-        x::Vector{T}, evaluator::RKOCEvaluator{T}) where {T <: Real}
-    res[1] = -one(T)
-    b_index = evaluator.num_vars - evaluator.num_stages + 1
-    @simd for i = b_index : evaluator.num_vars
+function evaluate_residual!(res::Vector{T}, x::Vector{T}, evaluator::RKOCEvaluator{T}) where {T <: Real}
+    @inbounds res[1] = -one(T)
+    b_idx = evaluator.num_vars - evaluator.num_stages + 1
+    @simd for i = b_idx : evaluator.num_vars
         @inbounds res[1] += x[i]
     end
     populate_u!(evaluator, x)
-    j = 2
     pos = 0
-    for i = 1 : evaluator.num_constrs - 1
-        n = evaluator.num_stages - SIZE_DEFICIT[i]
-        res[j] = dot_inplace(n, evaluator.u, pos, x, evaluator.num_vars - n)
-        res[j] -= evaluator.inv_gamma[i]
-        j += 1
+    for constr_idx = 2 : evaluator.num_constrs
+        @inbounds n = evaluator.num_stages - SIZE_DEFICIT[constr_idx - 1]
+        @inbounds res[constr_idx] = dot_inplace(n, evaluator.u, pos, x, evaluator.num_vars - n)
         pos += n
+    end
+    @simd ivdep for constr_idx = 2 : evaluator.num_constrs
+        @inbounds res[constr_idx] -= evaluator.inv_gamma[constr_idx - 1]
     end
 end
 
-function evaluate_jacobian!(jac::Matrix{T},
-        x::Vector{T}, evaluator::RKOCEvaluator{T}) where {T <: Real}
-    k = 1
+function evaluate_jacobian!(jac::Matrix{T}, x::Vector{T}, evaluator::RKOCEvaluator{T}) where {T <: Real}
     populate_u!(evaluator, x)
-    for var_index = 1 : evaluator.num_vars
-        populate_v!(evaluator, x, var_index - 1)
-        jac[k] = (var_index + evaluator.num_stages > evaluator.num_vars)
-        k += 1
+    for var_idx = 1 : evaluator.num_vars
+        populate_v!(evaluator, x, var_idx - 1)
+        @inbounds jac[1, var_idx] = (var_idx + evaluator.num_stages > evaluator.num_vars)
         pos = 0
-        for j = 1 : evaluator.num_constrs - 1
-            n = evaluator.num_stages - SIZE_DEFICIT[j]
+        for constr_idx = 2 : evaluator.num_constrs
+            @inbounds n = evaluator.num_stages - SIZE_DEFICIT[constr_idx - 1]
             m = evaluator.num_vars - n
-            jac[k] = dot_inplace(n, evaluator.v, pos, x, m)
-            if var_index + n > evaluator.num_vars
-                jac[k] += evaluator.u[pos + var_index - m]
+            @inbounds jac[constr_idx, var_idx] = dot_inplace(n, evaluator.v, pos, x, m)
+            if var_idx + n > evaluator.num_vars
+                @inbounds jac[constr_idx, var_idx] += evaluator.u[pos + var_idx - m]
             end
-            k += 1
             pos += n
         end
     end
