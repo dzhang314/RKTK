@@ -13,12 +13,8 @@ using Base: +, -, *, div, !, (:), ==, !=, <, <=, >, >=, min, max,
 const SymExpr = Union{Symbol,Expr}
 _tuple(x...) = Expr(:tuple, x...)
 
-_two_sum(s::Symbol, e::Symbol, a::SymExpr, b::SymExpr) =
-    Expr(:(=), _tuple(s, e), Expr(:call, :two_sum, a, b))
-_two_prod(p::Symbol, e::Symbol, a::SymExpr, b::SymExpr) =
-    Expr(:(=), _tuple(p, e), Expr(:call, :two_prod, a, b))
-_quick_two_sum(s::Symbol, e::Symbol, a::Symbol, b::Symbol) =
-    Expr(:(=), _tuple(s, e), Expr(:call, :quick_two_sum, a, b))
+# _empty_body() = Expr[]
+_empty_body() = [Expr(:meta, :inline)] # same as @inline
 
 _func(name::Symbol, args::Vector{Expr}, body::Vector{Expr}) =
     Expr(:function, Expr(:call, name, args...), Expr(:block, body...))
@@ -26,6 +22,13 @@ _func_F64(name::Symbol, args::Vector{Symbol}, body::Vector{Expr}) =
     _func(name, [Expr(:(::), arg, :Float64) for arg in args], body)
 _func_MF64(name::Symbol, args::Vector{Symbol}, n::Int, body::Vector{Expr}) =
     _func(name, [Expr(:(::), arg, _MF64(n)) for arg in args], body)
+
+_two_sum(s::Symbol, e::Symbol, a::SymExpr, b::SymExpr) =
+    Expr(:(=), _tuple(s, e), Expr(:call, :two_sum, a, b))
+_two_prod(p::Symbol, e::Symbol, a::SymExpr, b::SymExpr) =
+    Expr(:(=), _tuple(p, e), Expr(:call, :two_prod, a, b))
+_quick_two_sum(s::Symbol, e::Symbol, a::Symbol, b::Symbol) =
+    Expr(:(=), _tuple(s, e), Expr(:call, :quick_two_sum, a, b))
 
 _sum(addends::Vector{Symbol}) =
     length(addends) == 1 ? addends[1] : Expr(:call, :+, addends...)
@@ -45,7 +48,7 @@ function one_pass_renorm_func(n::Int; sloppy::Bool=false)
         return _func_F64(_renorm(2), args,
             [Expr(:call, :quick_two_sum, args...)])
     end
-    code = Expr[]
+    code = _empty_body()
     push!(code, _quick_two_sum(sums[1], sums[2], args[1], args[2]))
     for i = 1 : n-2
         push!(code, _quick_two_sum(sums[i+1], sums[i+2], sums[i+1], args[i+2]))
@@ -63,7 +66,7 @@ function two_pass_renorm_func(n::Int; sloppy::Bool=false)
             [Expr(:call, :quick_two_sum, args...)])
     end
     temp = Symbol('t')
-    code = Expr[]
+    code = _empty_body()
     push!(code, _quick_two_sum(temp, args[end], args[end-1], args[end]))
     for i = n-2-sloppy : -1 : 1
         push!(code, _quick_two_sum(temp, args[i+2], args[i+1], temp))
@@ -96,7 +99,7 @@ function mpadd_func(src_len::Int, dst_len::Int)
     args = [Symbol('a', i) for i = 1 : src_len]
     sums = [Symbol('s', i) for i = 0 : dst_len - 1]
     vars = [(a, 0) for a in args]
-    code = Expr[]
+    code = _empty_body()
     k = 0
     for i = 0 : dst_len-2
         while true
@@ -159,7 +162,7 @@ end
 MF64_alias(N::Int) = Expr(:const, Expr(:(=), Symbol("Float64x", N), _MF64(N)))
 
 function MF64_add_func(N::Int; sloppy::Bool=false)
-    code = Expr[]
+    code = _empty_body()
     vars = Tuple{Symbol,Int}[]
     for i = 1 : N - sloppy
         tmp = add_var!(vars, 't', i-1)
@@ -176,7 +179,7 @@ function MF64_add_func(N::Int; sloppy::Bool=false)
 end
 
 function MF64_F64_add_func(N::Int; sloppy::Bool=false)
-    code = Expr[]
+    code = _empty_body()
     vars = Tuple{Symbol,Int}[]
     push!(code, _two_sum(add_var!(vars, 't', 0), add_var!(vars, 'e', 1),
         :(a.x[1]), :b))
@@ -189,7 +192,7 @@ function MF64_F64_add_func(N::Int; sloppy::Bool=false)
 end
 
 function MF64_mul_func(N::Int; sloppy::Bool=false)
-    code = Expr[]
+    code = _empty_body()
     for i = 0 : N-1-sloppy, j = 0 : i
         push!(code, _two_prod(Symbol('t', j, '_', i),
             Symbol('e', j, '_', i+1), :(a.x[$(j+1)]), :(b.x[$(i-j+1)])))
@@ -207,7 +210,7 @@ function MF64_mul_func(N::Int; sloppy::Bool=false)
 end
 
 function MF64_F64_mul_func(N::Int; sloppy::Bool=false)
-    code = Expr[]
+    code = _empty_body()
     for i = 0 : N-1-sloppy
         push!(code, _two_prod(Symbol('t', i), Symbol('e', i+1),
             :(a.x[$(i+1)]), :b))
@@ -221,7 +224,7 @@ function MF64_F64_mul_func(N::Int; sloppy::Bool=false)
 end
 
 function MF64_div_func(N::Int; sloppy::Bool=false)
-    code = Expr[]
+    code = _empty_body()
     quots = [Symbol('q', i) for i = 0 : N - sloppy]
     push!(code, :($(quots[1]) = a.x[1] / b.x[1]))
     push!(code, :(r = a - b * $(quots[1])))
@@ -240,7 +243,7 @@ num_sqrt_iters(N::Int, sloppy::Bool) =
     sloppy ? div(N + 1, 2) : div(N + 2, 2)
 
 function MF64_sqrt_func(N::Int; sloppy::Bool=false)
-    code = Expr[]
+    code = _empty_body()
     push!(code, :(r = MultiFloat64{$N}(inv(sqrt(x.x[1])))))
     push!(code, :(h = scale(0.5, x)))
     for _ = 1 : num_sqrt_iters(N, sloppy)
