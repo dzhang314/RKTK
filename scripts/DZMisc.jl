@@ -1,14 +1,10 @@
 __precompile__(false)
 module DZMisc
 
-export dbl, log, rooted_tree_count, orthonormalize_columns!
+export dbl, rooted_tree_count, orthonormalize_columns!,
+    approx_norm, approx_norm2, approx_normalize!
 
 dbl(x::T) where {T <: Number} = x + x
-
-function log(args...)
-    println(args...)
-    flush(stdout)
-end
 
 function rooted_tree_count(n::Int)
     if n <= 0
@@ -23,7 +19,7 @@ function rooted_tree_count(n::Int)
     sum(numerator.(counts))
 end
 
-function orthonormalize_columns!(mat::Matrix{T}) where {T}
+function orthonormalize_columns!(mat::Matrix{T}) where {T <: Real}
     m = size(mat, 1)
     n = size(mat, 2)
     for j = 1 : n
@@ -44,6 +40,23 @@ function orthonormalize_columns!(mat::Matrix{T}) where {T}
         @simd ivdep for i = 1 : m
             @inbounds mat[i, j] *= acc
         end
+    end
+end
+
+function approx_norm2(x::Vector{T}) where {T <: Number}
+    result = zero(Float64)
+    @simd for i = 1 : length(x)
+        @inbounds result += abs2(Float64(x[i]))
+    end
+    result
+end
+
+approx_norm(x::Vector{T}) where {T <: Number} = sqrt(approx_norm2(x))
+
+function approx_normalize!(x::Vector{T}) where {T <: Number}
+    a = inv(approx_norm(x))
+    @simd ivdep for i = 1 : length(x)
+        @inbounds x[i] *= a
     end
 end
 
