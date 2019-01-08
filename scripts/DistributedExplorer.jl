@@ -109,9 +109,7 @@ end
     orthonormalize_columns!(SHORT_JAC)
     for j = 1 : length(CONSTR_IDXS)
         @simd ivdep for i = 1 : NUM_VARS
-            # Something weird is going on here. Adding @inbounds to the next
-            # line segfaults, but no array access is ever out-of-bounds.
-            APX_SHORT_JAC[i, j] = Float64(SHORT_JAC[i, j])
+            @inbounds APX_SHORT_JAC[i, j] = Float64(SHORT_JAC[i, j])
         end
     end
 end
