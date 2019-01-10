@@ -147,6 +147,16 @@ import Base: +, -, *
 -(x::Float64, y::MultiFloat64{N}) where {N} = -(y + (-x))
 *(x::Float64, y::MultiFloat64{N}) where {N} = y * x
 
+# TODO: Add accurate comparison operators. Sloppy stop-gap operators for now.
+import Base: ==, !=, <, >, <=, >=
+==(x::MultiFloat64{N}, y::MultiFloat64{N}) where {N} = Float64(x) == Float64(y)
+!=(x::MultiFloat64{N}, y::MultiFloat64{N}) where {N} = Float64(x) != Float64(y)
+<(x::MultiFloat64{N}, y::MultiFloat64{N}) where {N} = Float64(x) < Float64(y)
+>(x::MultiFloat64{N}, y::MultiFloat64{N}) where {N} = Float64(x) > Float64(y)
+<=(x::MultiFloat64{N}, y::MultiFloat64{N}) where {N} = Float64(x) <= Float64(y)
+>=(x::MultiFloat64{N}, y::MultiFloat64{N}) where {N} = Float64(x) >= Float64(y)
+
+import DZMisc: scale
 scale(a::Float64, x::MultiFloat64{N}) where {N} =
     MultiFloat64{N}(ntuple(i -> a * x.x[i], N))
 
