@@ -164,7 +164,7 @@ end
         #     ") by ", multiplier * approx_norm(direction), ".")
         x_new
     else
-        multiplier /= 4
+        multiplier /= 16
         if multiplier < 0.0625
             multiplier = 0.0
             log("WARNING: Failed to move point ", i, " (", obj,

@@ -149,12 +149,18 @@ import Base: +, -, *
 
 # TODO: Add accurate comparison operators. Sloppy stop-gap operators for now.
 import Base: ==, !=, <, >, <=, >=
-==(x::MultiFloat64{N}, y::MultiFloat64{N}) where {N} = Float64(x) == Float64(y)
-!=(x::MultiFloat64{N}, y::MultiFloat64{N}) where {N} = Float64(x) != Float64(y)
-<(x::MultiFloat64{N}, y::MultiFloat64{N}) where {N} = Float64(x) < Float64(y)
->(x::MultiFloat64{N}, y::MultiFloat64{N}) where {N} = Float64(x) > Float64(y)
-<=(x::MultiFloat64{N}, y::MultiFloat64{N}) where {N} = Float64(x) <= Float64(y)
->=(x::MultiFloat64{N}, y::MultiFloat64{N}) where {N} = Float64(x) >= Float64(y)
+==(x::MultiFloat64{N}, y::MultiFloat64{N}) where {N} =
+    (x.x[1] == y.x[1]) & (x.x[2] == y.x[2])
+!=(x::MultiFloat64{N}, y::MultiFloat64{N}) where {N} =
+    (x.x[1] != y.x[1]) | (x.x[2] != y.x[2])
+<(x::MultiFloat64{N}, y::MultiFloat64{N}) where {N} =
+    (x.x[1] < y.x[1]) | ((x.x[1] == y.x[1]) & (x.x[2] < y.x[2]))
+>(x::MultiFloat64{N}, y::MultiFloat64{N}) where {N} =
+    (x.x[1] > y.x[1]) | ((x.x[1] == y.x[1]) & (x.x[2] > y.x[2]))
+<=(x::MultiFloat64{N}, y::MultiFloat64{N}) where {N} =
+    (x.x[1] < y.x[1]) | ((x.x[1] == y.x[1]) & (x.x[2] <= y.x[2]))
+>=(x::MultiFloat64{N}, y::MultiFloat64{N}) where {N} =
+    (x.x[1] > y.x[1]) | ((x.x[1] == y.x[1]) & (x.x[2] >= y.x[2]))
 
 import DZMisc: scale
 scale(a::Float64, x::MultiFloat64{N}) where {N} =
