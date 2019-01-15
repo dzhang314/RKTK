@@ -1,7 +1,7 @@
 __precompile__(false)
 module RKTKParallel
 
-include("rounds/RK-ROUNDS-5-6.jl")
+include("rounds/RK-ROUNDS-7-9.jl")
 
 export ORDER, NUM_STAGES, NUM_VARS, NUM_CONSTRS, RKOCEvaluatorParallel,
     evaluate_residual_parallel!, evaluate_jacobian_parallel!

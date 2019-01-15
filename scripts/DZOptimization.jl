@@ -17,16 +17,17 @@ struct BFGSOptimizer{T <: Real}
     hess_inv::Matrix{T}
 end
 
-function BFGSOptimizer(vec::Vector{T}, step_size, f, g!) where {T <: Real}
+function BFGSOptimizer(vec::Vector{T}, step_size,
+        f, g!, args...) where {T <: Real}
     n = length(vec)
     x = Vector{T}(undef, n)
     @simd ivdep for i = 1 : n
         @inbounds x[i] = vec[i]
     end
     temp = Vector{T}(undef, n)
-    objective = Ref{T}(f(x))
+    objective = Ref{T}(f(x, args...))
     gradient = Vector{T}(undef, n)
-    g!(gradient, x)
+    g!(gradient, x, args...)
     last_step_size = Ref{T}(step_size)
     delta_gradient = Vector{T}(undef, n)
     bfgs_dir = copy(gradient)
@@ -49,22 +50,22 @@ function reset_hessian!(opt::BFGSOptimizer{T}) where {T <: Real}
 end
 
 function step_obj(step_size::T, step_dir::Vector{T},
-        opt::BFGSOptimizer{T}, f) where {T <: Real}
+        opt::BFGSOptimizer{T}, f, args...) where {T <: Real}
     @simd ivdep for i = 1 : opt.n
         @inbounds opt.temp[i] = opt.x[i] - step_size * step_dir[i]
     end
-    f(opt.temp)
+    f(opt.temp, args...)
 end
 
-function step!(opt::BFGSOptimizer{T}, f, g!) where {T <: Real}
+function step!(opt::BFGSOptimizer{T}, f, g!, args...) where {T <: Real}
     step_size = opt.last_step_size[]
     objective = opt.objective[]
     grad_norm = norm(opt.gradient)
     bfgs_norm = norm(opt.bfgs_dir)
     grad_step_size, grad_obj = quadratic_line_search(step_obj,
-        objective, step_size / grad_norm, opt.gradient, opt, f)
+        objective, step_size / grad_norm, opt.gradient, opt, f, args...)
     bfgs_step_size, bfgs_obj = quadratic_line_search(step_obj,
-        objective, step_size / bfgs_norm, opt.bfgs_dir, opt, f)
+        objective, step_size / bfgs_norm, opt.bfgs_dir, opt, f, args...)
     if bfgs_obj <= grad_obj
         opt.objective[] = bfgs_obj
         objective_decreased = (bfgs_obj < objective)
@@ -75,7 +76,7 @@ function step!(opt::BFGSOptimizer{T}, f, g!) where {T <: Real}
         @simd ivdep for i = 1 : opt.n
             @inbounds opt.delta_gradient[i] = -opt.gradient[i]
         end
-        g!(opt.gradient, opt.x)
+        g!(opt.gradient, opt.x, args...)
         @simd ivdep for i = 1 : opt.n
             @inbounds opt.delta_gradient[i] += opt.gradient[i]
         end
@@ -91,7 +92,7 @@ function step!(opt::BFGSOptimizer{T}, f, g!) where {T <: Real}
             @inbounds opt.x[i] -= grad_step_size * opt.gradient[i]
         end
         reset_hessian!(opt)
-        g!(opt.gradient, opt.x)
+        g!(opt.gradient, opt.x, args...)
         @simd ivdep for i = 1 : opt.n
             @inbounds opt.bfgs_dir[i] = opt.gradient[i]
         end
