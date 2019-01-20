@@ -1,6 +1,8 @@
 module DZMisc
 
-export dbl, scale, rooted_tree_count, orthonormalize_columns!,
+export dbl, scale, integer_partitions,
+    RootedTree, rooted_trees, rooted_tree_count, butcher_density,
+    orthonormalize_columns!,
     norm, norm2, normalize!, approx_norm, approx_norm2, approx_normalize!,
     quadratic_line_search
 
@@ -8,16 +10,153 @@ using LinearAlgebra: dot, mul!
 
 ################################################################################
 
-dbl(x::T) where {T <: Number} = x + x
+@inline function dbl(x::T)::T where {T <: Number}
+    x + x
+end
 
-scale(a::Float64, x::T) where {T <: Number} = T(a * x)
+@inline function scale(a::Float64, x::T)::T where {T <: Number}
+    a * x
+end
 
 ################################################################################
 
-function rooted_tree_count(n::Int)
-    if n <= 0
-        error("rooted_tree_count requires positive argument")
+function _int_parts_impl(n::Int, max::Int)::Vector{Vector{Pair{Int,Int}}}
+    if n == 0
+        [Pair{Int,Int}[]]
+    elseif max == 0
+        Vector{Pair{Int,Int}}[]
+    else
+        result = Vector{Pair{Int,Int}}[]
+        for m = max : -1 : 1, q = div(n, m) : -1 : 1
+            for p in _int_parts_impl(n - q * m, m - 1)
+                push!(result, push!(p, m => q))
+            end
+        end
+        result
     end
+end
+
+function _int_parts_impl(n::Int, max::Int, len::Int)::Vector{Vector{Int}}
+    if n == 0
+        [zeros(Int, len)]
+    elseif max * len < n
+        Vector{Int}[]
+    else
+        result = Vector{Int}[]
+        for m = min(n, max) : -1 : div(n + len - 1, len)
+            for p in _int_parts_impl(n - m, m, len - 1)
+                push!(result, push!(p, m))
+            end
+        end
+        result
+    end
+end
+
+integer_partitions(n::Int)::Vector{Vector{Pair{Int,Int}}} =
+    reverse!.(_int_parts_impl(n, n))
+integer_partitions(n::Int, len::Int)::Vector{Vector{Int}} =
+    reverse!.(_int_parts_impl(n, n, len))
+
+################################################################################
+
+function next_permutation!(items::Vector{T})::Bool where {T}
+    num_items = length(items)
+    if num_items == 0; return false; end
+    current_item = items[num_items]
+    pivot_index = num_items - 1
+    while pivot_index != 0
+        next_item = items[pivot_index]
+        if next_item >= current_item
+            pivot_index -= 1
+            current_item = next_item
+        else; break; end
+    end
+    if pivot_index == 0; return false; end
+    pivot = items[pivot_index]
+    successor_index = num_items
+    while items[successor_index] <= pivot; successor_index -= 1; end
+    items[pivot_index], items[successor_index] =
+        items[successor_index], items[pivot_index]
+    reverse!(view(items, pivot_index + 1 : num_items))
+    return true
+end
+
+function previous_permutation!(items::Vector{T})::Bool where {T}
+    num_items = length(items)
+    if num_items == 0; return false; end
+    current_item = items[num_items]
+    pivot_index = num_items - 1
+    while pivot_index != 0
+        next_item = items[pivot_index]
+        if next_item <= current_item
+            pivot_index -= 1
+            current_item = next_item
+        else; break; end
+    end
+    if pivot_index == 0; return false; end
+    pivot = items[pivot_index]
+    successor_index = num_items
+    while items[successor_index] >= pivot; successor_index -= 1; end
+    items[pivot_index], items[successor_index] =
+        items[successor_index], items[pivot_index]
+    reverse!(view(items, pivot_index + 1 : num_items))
+    return true
+end
+
+function combinations_with_replacement(
+        items::Vector{T}, n::Int)::Vector{Vector{Pair{T,Int}}} where {T}
+        combinations = Vector{Pair{T,Int}}[]
+    for p in integer_partitions(n, length(items))
+        while true
+            comb = Pair{T,Int}[]
+            for (item, k) in zip(items, p)
+                if k > 0; push!(comb, item => k); end
+            end
+            push!(combinations, comb)
+            if !previous_permutation!(p); break; end
+        end
+    end
+    combinations
+end
+
+################################################################################
+
+struct RootedTree
+    order::Int
+    children::Vector{Pair{RootedTree,Int}}
+end
+
+# function Base.show(io::IO, tree::RootedTree)::Nothing
+#     print(io, '[')
+#     for (subtree, multiplicity) in tree.children
+#         print(io, subtree)
+#         if multiplicity != 1
+#             print(io, '^', multiplicity)
+#         end
+#     end
+#     print(io, ']')
+# end
+
+function rooted_trees(n::Int)::Vector{Vector{RootedTree}}
+    result = Vector{RootedTree}[]
+    for k = 1 : n
+        trees = RootedTree[]
+        for partition in integer_partitions(k - 1)
+            combination_candidates = [
+                combinations_with_replacement(result[order], multiplicity)
+                for (order, multiplicity) in partition]
+            for combination_sequence in Base.product(combination_candidates...)
+                push!(trees, RootedTree(k, vcat(combination_sequence...)))
+            end
+        end
+        push!(result, trees)
+    end
+    result
+end
+
+function rooted_tree_count(n::Int)::BigInt
+    if n < 0; error("rooted_tree_count requires non-negative argument"); end
+    if n == 0; return 0; end
     counts = zeros(Rational{BigInt}, n)
     counts[1] = 1
     for i = 2 : n, k = 1 : i - 1, m = 1 : div(i - 1, k)
@@ -27,9 +166,17 @@ function rooted_tree_count(n::Int)
     sum(numerator.(counts))
 end
 
+function butcher_density(tree::RootedTree)::Int
+    result = tree.order
+    for (subtree, multiplicity) in tree.children
+        result *= butcher_density(subtree)^multiplicity
+    end
+    result
+end
+
 ################################################################################
 
-function orthonormalize_columns!(mat::Matrix{T}) where {T <: Real}
+function orthonormalize_columns!(mat::Matrix{T})::Nothing where {T <: Real}
     m = size(mat, 1)
     n = size(mat, 2)
     for j = 1 : n
@@ -55,7 +202,7 @@ end
 
 ################################################################################
 
-function norm2(x::Vector{T}) where {T <: Number}
+function norm2(x::Vector{T})::T where {T <: Number}
     result = zero(float(real(T)))
     @simd for i = 1 : length(x)
         @inbounds result += abs2(x[i])
@@ -63,9 +210,11 @@ function norm2(x::Vector{T}) where {T <: Number}
     result
 end
 
-norm(x::Vector{T}) where {T <: Number} = sqrt(norm2(x))
+@inline function norm(x::Vector{T})::T where {T <: Number}
+    sqrt(norm2(x))
+end
 
-function normalize!(x::Vector{T}) where {T <: Number}
+function normalize!(x::Vector{T})::Nothing where {T <: Number}
     a = inv(norm(x))
     @simd ivdep for i = 1 : length(x)
         @inbounds x[i] *= a
@@ -74,7 +223,7 @@ end
 
 ################################################################################
 
-function approx_norm2(x::Vector{T}) where {T <: Number}
+function approx_norm2(x::Vector{T})::Float64 where {T <: Number}
     result = zero(Float64)
     @simd for i = 1 : length(x)
         @inbounds result += abs2(Float64(x[i]))
@@ -82,9 +231,11 @@ function approx_norm2(x::Vector{T}) where {T <: Number}
     result
 end
 
-approx_norm(x::Vector{T}) where {T <: Number} = sqrt(approx_norm2(x))
+@inline function approx_norm(x::Vector{T})::Float64 where {T <: Number}
+    sqrt(approx_norm2(x))
+end
 
-function approx_normalize!(x::Vector{T}) where {T <: Number}
+function approx_normalize!(x::Vector{T})::Nothing where {T <: Number}
     a = inv(approx_norm(x))
     @simd ivdep for i = 1 : length(x)
         @inbounds x[i] *= a
@@ -164,7 +315,7 @@ end
 ################################################################################
 
 function update_inverse_hessian!(B_inv::Matrix{T}, h::T,
-        s::Vector{T}, y::Vector{T}, t::Vector{T}) where {T <: Real}
+        s::Vector{T}, y::Vector{T}, t::Vector{T})::Nothing where {T <: Real}
     b = dot(s, y)
     s .*= inv(b)
     mul!(t, B_inv, y)

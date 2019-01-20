@@ -4,143 +4,12 @@ export RKOCEvaluator, evaluate_residual!, evaluate_jacobian!
 
 using Base.Threads: @threads, nthreads, threadid
 
-using DZMisc: dbl
+using DZMisc: dbl, RootedTree, rooted_trees, butcher_density
 
 ################################################################################
 
-function _integer_partitions_impl(n::Int, max::Int)::Vector{Vector{Pair{Int,Int}}}
-    if n == 0
-        [Pair{Int,Int}[]]
-    elseif max == 0
-        Vector{Pair{Int,Int}}[]
-    else
-        result = Vector{Pair{Int,Int}}[]
-        for m = max : -1 : 1, q = div(n, m) : -1 : 1
-            for p in _integer_partitions_impl(n - q * m, m - 1)
-                push!(result, push!(p, m => q))
-            end
-        end
-        result
-    end
-end
-
-function _integer_partitions_impl(n::Int, max::Int, len::Int)::Vector{Vector{Int}}
-    if n == 0
-        [zeros(Int, len)]
-    elseif max * len < n
-        Vector{Int}[]
-    else
-        result = []
-        for m = min(n, max) : -1 : div(n + len - 1, len)
-            for p in _integer_partitions_impl(n - m, m, len - 1)
-                push!(result, push!(p, m))
-            end
-        end
-        result
-    end
-end
-
-integer_partitions(n::Int)::Vector{Vector{Pair{Int,Int}}} =
-    reverse!.(_integer_partitions_impl(n, n))
-integer_partitions(n::Int, len::Int)::Vector{Vector{Int}} =
-    reverse!.(_integer_partitions_impl(n, n, len))
-
-################################################################################
-
-function previous_permutation!(items::Vector{T})::Bool where {T}
-    num_items = length(items)
-    if num_items == 0
-        return false
-    end
-    current_item = items[num_items]
-    pivot_index = num_items - 1
-    while pivot_index != 0
-        next_item = items[pivot_index]
-        if next_item <= current_item
-            pivot_index -= 1
-            current_item = next_item
-        else
-            break
-        end
-    end
-    if pivot_index == 0
-        return false
-    end
-    pivot = items[pivot_index]
-    successor_index = num_items
-    while items[successor_index] >= pivot
-        successor_index -= 1
-    end
-    items[pivot_index], items[successor_index] = items[successor_index], items[pivot_index]
-    reverse!(view(items, pivot_index + 1 : num_items))
-    true
-end
-
-function combinations_with_replacement(items::Vector{T}, n::Int)::Vector{Vector{Pair{T,Int}}} where {T}
-    combs = Vector{Pair{T,Int}}[]
-    for p in integer_partitions(n, length(items))
-        while true
-            comb = Pair{T,Int}[]
-            for (item, k) in zip(items, p)
-                if k > 0
-                    push!(comb, item => k)
-                end
-            end
-            push!(combs, comb)
-            if !previous_permutation!(p)
-                break
-            end
-        end
-    end
-    combs
-end
-
-################################################################################
-
-struct RootedTree
-    order::Int
-    children::Vector{Pair{RootedTree,Int}}
-end
-
-function rooted_trees(n::Int)::Vector{Vector{RootedTree}}
-    result = Vector{RootedTree}[]
-    for k = 1 : n
-        trees = RootedTree[]
-        for partition in integer_partitions(k - 1)
-            combination_candidates = [
-                combinations_with_replacement(result[order], multiplicity)
-                for (order, multiplicity) in partition]
-            for combination_sequence in Base.product(combination_candidates...)
-                push!(trees, RootedTree(k, vcat(combination_sequence...)))
-            end
-        end
-        push!(result, trees)
-    end
-    result
-end
-
-function Base.show(io::IO, tree::RootedTree)::Nothing
-    print(io, '[')
-    for (subtree, multiplicity) in tree.children
-        print(io, subtree)
-        if multiplicity != 1
-            print(io, '^', multiplicity)
-        end
-    end
-    print(io, ']')
-end
-
-function butcher_density(tree::RootedTree)::Int
-    result = tree.order
-    for (subtree, multiplicity) in tree.children
-        result *= butcher_density(subtree)^multiplicity
-    end
-    result
-end
-
-################################################################################
-
-function tree_index_table(trees_of_order::Vector{Vector{RootedTree}})::Dict{String,Int}
+function tree_index_table(
+        trees_of_order::Vector{Vector{RootedTree}})::Dict{String,Int}
     order = length(trees_of_order)
     tree_index = Dict{String,Int}()
     i = 0
@@ -150,7 +19,8 @@ function tree_index_table(trees_of_order::Vector{Vector{RootedTree}})::Dict{Stri
     tree_index
 end
 
-function dependency_table(trees_of_order::Vector{Vector{RootedTree}})::Vector{Vector{Int}}
+function dependency_table(
+        trees_of_order::Vector{Vector{RootedTree}})::Vector{Vector{Int}}
     order = length(trees_of_order)
     tree_index = tree_index_table(trees_of_order)
     dependencies = Vector{Int}[]
@@ -211,7 +81,19 @@ function deficit_table(dependencies::Vector{Vector{Int}})::Vector{Int}
     deficit
 end
 
-function instruction_table(dependencies::Vector{Vector{Int}}, ranges::Vector{Tuple{Int,Int}})::Vector{NTuple{5,Int}}
+function range_table(dependencies::Vector{Vector{Int}},
+        num_stages::Int)::Vector{Tuple{Int,Int}}
+    deficit = deficit_table(dependencies)
+    lengths = num_stages .- deficit
+    lengths[1] = 0
+    cumsum!(lengths, lengths)
+    table_size = lengths[end]
+    ranges = vcat([(1, 0)], collect(
+        zip(lengths[1 : end - 1] .+ 1, lengths[2 : end])))
+end
+
+function instruction_table(dependencies::Vector{Vector{Int}},
+        ranges::Vector{Tuple{Int,Int}})::Vector{NTuple{5,Int}}
     instructions = Vector{NTuple{5,Int}}(undef, length(dependencies))
     for (i, deps) in enumerate(dependencies)
         num_deps = length(deps)
@@ -249,26 +131,21 @@ function RKOCEvaluator{T}(order::Int, num_stages::Int) where {T <: Real}
     num_constrs = sum(length.(trees_of_order))
     dependencies = dependency_table(trees_of_order)
     generation = generation_table(dependencies)
-    deficit = deficit_table(dependencies)
-    lengths = num_stages .- deficit
-    lengths[1] = 0
-    cumsum!(lengths, lengths)
-    table_size = lengths[end]
-    ranges = vcat([(1, 0)], collect(zip(lengths[1 : end - 1] .+ 1, lengths[2 : end])))
+    ranges = range_table(dependencies, num_stages)
+    table_size = ranges[end][2]
     instructions = instruction_table(dependencies, ranges)
     rounds = [NTuple{5,Int}[] for _ = 1 : maximum(generation) - 1]
     for (i, g) in enumerate(generation)
-        if g > 1
-            push!(rounds[g - 1], instructions[i])
-        end
+        if g > 1; push!(rounds[g - 1], instructions[i]); end
     end
-    inv_density = inv.(T.(butcher_density.(vcat(trees_of_order...))))
-    u = Vector{T}(undef, table_size)
-    vs = [Vector{T}(undef, table_size) for _ = 1 : nthreads()]
-    RKOCEvaluator{T}(order, num_stages, num_vars, num_constrs, rounds, inv_density, u, vs)
+    RKOCEvaluator{T}(order, num_stages, num_vars, num_constrs, rounds,
+        inv.(T.(butcher_density.(vcat(trees_of_order...)))),
+        Vector{T}(undef, table_size),
+        [Vector{T}(undef, table_size) for _ = 1 : nthreads()])
 end
 
-function populate_u_init!(evaluator::RKOCEvaluator{T}, x::Vector{T}) where {T <: Real}
+function populate_u_init!(evaluator::RKOCEvaluator{T},
+        x::Vector{T}) where {T <: Real}
     u = evaluator.u
     k = 1
     for i = 1 : evaluator.num_stages - 1
@@ -299,7 +176,8 @@ function lvm_u!(evaluator::RKOCEvaluator{T}, dst_begin::Int, dst_end::Int,
     end
 end
 
-function populate_u!(evaluator::RKOCEvaluator{T}, x::Vector{T}) where {T <: Real}
+function populate_u!(evaluator::RKOCEvaluator{T},
+        x::Vector{T}) where {T <: Real}
     u = evaluator.u
     populate_u_init!(evaluator, x)
     for round in evaluator.rounds
@@ -319,7 +197,8 @@ function populate_u!(evaluator::RKOCEvaluator{T}, x::Vector{T}) where {T <: Real
     end
 end
 
-function populate_v_init!(evaluator::RKOCEvaluator{T}, v::Vector{T}, var_index::Int) where {T <: Real}
+function populate_v_init!(evaluator::RKOCEvaluator{T},
+        v::Vector{T}, var_index::Int) where {T <: Real}
     j = 0
     for i = 1 : evaluator.num_stages - 1
         result = (j == var_index)
