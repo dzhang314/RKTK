@@ -126,17 +126,6 @@ struct RootedTree
     children::Vector{Pair{RootedTree,Int}}
 end
 
-# function Base.show(io::IO, tree::RootedTree)::Nothing
-#     print(io, '[')
-#     for (subtree, multiplicity) in tree.children
-#         print(io, subtree)
-#         if multiplicity != 1
-#             print(io, '^', multiplicity)
-#         end
-#     end
-#     print(io, ']')
-# end
-
 function rooted_trees(n::Int)::Vector{Vector{RootedTree}}
     result = Vector{RootedTree}[]
     for k = 1 : n

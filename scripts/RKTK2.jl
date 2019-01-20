@@ -8,6 +8,17 @@ using DZMisc: dbl, RootedTree, rooted_trees, butcher_density
 
 ################################################################################
 
+function Base.show(io::IO, tree::RootedTree)::Nothing
+    print(io, '[')
+    for (subtree, multiplicity) in tree.children
+        print(io, subtree)
+        if multiplicity != 1
+            print(io, '^', multiplicity)
+        end
+    end
+    print(io, ']')
+end
+
 function tree_index_table(
         trees_of_order::Vector{Vector{RootedTree}})::Dict{String,Int}
     order = length(trees_of_order)
