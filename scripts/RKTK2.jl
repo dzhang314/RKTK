@@ -156,7 +156,7 @@ function RKOCEvaluator{T}(order::Int, num_stages::Int) where {T <: Real}
 end
 
 function populate_u_init!(evaluator::RKOCEvaluator{T},
-        x::Vector{T}) where {T <: Real}
+        x::Vector{T})::Nothing where {T <: Real}
     u = evaluator.u
     k = 1
     for i = 1 : evaluator.num_stages - 1
@@ -170,7 +170,8 @@ function populate_u_init!(evaluator::RKOCEvaluator{T},
 end
 
 function lvm_u!(evaluator::RKOCEvaluator{T}, dst_begin::Int, dst_end::Int,
-                x::Vector{T}, src_begin::Int) where {T <: Real}
+                x::Vector{T}, src_begin::Int)::Nothing where {T <: Real}
+    if dst_begin > dst_end; return; end
     u = evaluator.u
     dst_size = dst_end - dst_begin + 1
     skip = evaluator.num_stages - dst_size
@@ -188,7 +189,7 @@ function lvm_u!(evaluator::RKOCEvaluator{T}, dst_begin::Int, dst_end::Int,
 end
 
 function populate_u!(evaluator::RKOCEvaluator{T},
-        x::Vector{T}) where {T <: Real}
+        x::Vector{T})::Nothing where {T <: Real}
     u = evaluator.u
     populate_u_init!(evaluator, x)
     for round in evaluator.rounds
@@ -209,7 +210,7 @@ function populate_u!(evaluator::RKOCEvaluator{T},
 end
 
 function populate_v_init!(evaluator::RKOCEvaluator{T},
-        v::Vector{T}, var_index::Int) where {T <: Real}
+        v::Vector{T}, var_index::Int)::Nothing where {T <: Real}
     j = 0
     for i = 1 : evaluator.num_stages - 1
         result = (j == var_index)
@@ -224,7 +225,8 @@ end
 
 function lvm_v!(evaluator::RKOCEvaluator{T}, v::Vector{T}, var_index::Int,
                 dst_begin::Int, dst_end::Int,
-                x::Vector{T}, src_begin::Int) where {T <: Real}
+                x::Vector{T}, src_begin::Int)::Nothing where {T <: Real}
+    if dst_begin > dst_end; return; end
     u = evaluator.u
     dst_size = dst_end - dst_begin + 1
     skip = evaluator.num_stages - dst_size
@@ -250,7 +252,7 @@ function lvm_v!(evaluator::RKOCEvaluator{T}, v::Vector{T}, var_index::Int,
 end
 
 function populate_v!(evaluator::RKOCEvaluator{T}, v::Vector{T},
-                     x::Vector{T}, var_index::Int) where {T <: Real}
+                     x::Vector{T}, var_index::Int)::Nothing where {T <: Real}
     u = evaluator.u
     populate_v_init!(evaluator, v, var_index)
     for round in evaluator.rounds
@@ -273,16 +275,16 @@ end
 
 @inline function dot_inplace(n::Int,
         v::Vector{T}, v_offset::Int,
-        w::Vector{T}, w_offset::Int) where {T <: Real}
-    @inbounds result = v[v_offset + 1] * w[w_offset + 1]
-    @simd for i = 2 : n
+        w::Vector{T}, w_offset::Int)::T where {T <: Real}
+    @inbounds result = zero(T)
+    @simd for i = 1 : n
         @inbounds result += v[v_offset + i] * w[w_offset + i]
     end
     result
 end
 
 function evaluate_residual!(res::Vector{T}, x::Vector{T},
-        evaluator::RKOCEvaluator{T}) where {T <: Real}
+        evaluator::RKOCEvaluator{T})::Nothing where {T <: Real}
     u = evaluator.u
     num_stages = evaluator.num_stages
     num_vars = evaluator.num_vars
@@ -309,7 +311,7 @@ function evaluate_residual!(res::Vector{T}, x::Vector{T},
 end
 
 function evaluate_jacobian!(jac::Matrix{T}, x::Vector{T},
-        evaluator::RKOCEvaluator{T}) where {T <: Real}
+        evaluator::RKOCEvaluator{T})::Nothing where {T <: Real}
     u = evaluator.u
     num_stages = evaluator.num_stages
     num_vars = evaluator.num_vars
