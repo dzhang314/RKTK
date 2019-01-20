@@ -1,4 +1,3 @@
-__precompile__(false)
 baremodule RKTKData
 
 export GAMMA, SIZE_DEFICIT, TOTAL_SIZE_DEFICIT, OPCODES

@@ -10,7 +10,7 @@ using LinearAlgebra: dot, mul!
 
 dbl(x::T) where {T <: Number} = x + x
 
-scale(a::Float64, x::T) where {T <: Number} = a * x
+scale(a::Float64, x::T) where {T <: Number} = T(a * x)
 
 ################################################################################
 

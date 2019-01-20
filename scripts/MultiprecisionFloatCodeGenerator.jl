@@ -1,4 +1,3 @@
-__precompile__(false)
 baremodule MultiprecisionFloatCodeGenerator
 
 export one_pass_renorm_func, two_pass_renorm_func, MF64_alias,
