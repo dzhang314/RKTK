@@ -96,6 +96,7 @@ function range_table(dependencies::Vector{Vector{Int}},
         num_stages::Int)::Vector{Tuple{Int,Int}}
     deficit = deficit_table(dependencies)
     lengths = num_stages .- deficit
+    clamp!(lengths, 0, typemax(Int))
     lengths[1] = 0
     cumsum!(lengths, lengths)
     table_size = lengths[end]
