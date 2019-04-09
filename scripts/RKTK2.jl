@@ -1,10 +1,11 @@
 module RKTK2
 
-export RKOCEvaluator, evaluate_residual!, evaluate_jacobian!
+export RKOCEvaluator, evaluate_residual!, evaluate_jacobian!,
+    evaluate_error_coefficients!, evaluate_error_jacobian!
 
 using Base.Threads: @threads, nthreads, threadid
 
-using DZMisc: dbl, RootedTree, rooted_trees, butcher_density
+using DZMisc: dbl, RootedTree, rooted_trees, butcher_density, butcher_symmetry
 
 ################################################################################
 
@@ -133,6 +134,7 @@ struct RKOCEvaluator{T <: Real}
     num_constrs::Int
     rounds::Vector{Vector{NTuple{5,Int}}}
     inv_density::Vector{T}
+    inv_symmetry::Vector{T}
     u::Vector{T}
     vs::Vector{Vector{T}}
 end
@@ -152,9 +154,12 @@ function RKOCEvaluator{T}(order::Int, num_stages::Int) where {T <: Real}
     end
     RKOCEvaluator{T}(order, num_stages, num_vars, num_constrs, rounds,
         inv.(T.(butcher_density.(vcat(trees_of_order...)))),
+        inv.(T.(butcher_symmetry.(vcat(trees_of_order...)))),
         Vector{T}(undef, table_size),
         [Vector{T}(undef, table_size) for _ = 1 : nthreads()])
 end
+
+################################################################################
 
 function populate_u_init!(evaluator::RKOCEvaluator{T},
         x::Vector{T})::Nothing where {T <: Real}
@@ -284,6 +289,8 @@ end
     result
 end
 
+################################################################################
+
 function evaluate_residual!(res::Vector{T}, x::Vector{T},
         evaluator::RKOCEvaluator{T})::Nothing where {T <: Real}
     u = evaluator.u
@@ -338,6 +345,69 @@ function evaluate_jacobian!(jac::Matrix{T}, x::Vector{T},
                 if var_idx + n > num_vars
                     @inbounds result += u[dst_begin - 1 + var_idx - m]
                 end
+                @inbounds jac[res_index, var_idx] = result
+            end
+        end
+    end
+end
+
+function evaluate_error_coefficients!(res::Vector{T}, x::Vector{T},
+        evaluator::RKOCEvaluator{T})::Nothing where {T <: Real}
+    u = evaluator.u
+    num_stages = evaluator.num_stages
+    num_vars = evaluator.num_vars
+    inv_density = evaluator.inv_density
+    inv_symmetry = evaluator.inv_symmetry
+    populate_u!(evaluator, x)
+    let
+        first = -one(T)
+        b_idx = num_vars - num_stages + 1
+        @simd for i = b_idx : num_vars
+            @inbounds first += x[i]
+        end
+        @inbounds res[1] = first
+    end
+    @inbounds res[2] = dot_inplace(num_stages - 1, u, 0,
+                                   x, num_vars - num_stages + 1) - T(0.5)
+    for round in evaluator.rounds
+        @threads for (res_index, dst_begin, dst_end, _, _) in round
+            j = dst_begin - 1
+            n = dst_end - j
+            @inbounds res[res_index] = inv_symmetry[res_index] * (
+                dot_inplace(n, u, j, x, num_vars - n) - inv_density[res_index])
+        end
+    end
+end
+
+function evaluate_error_jacobian!(jac::Matrix{T}, x::Vector{T},
+        evaluator::RKOCEvaluator{T})::Nothing where {T <: Real}
+    u = evaluator.u
+    num_stages = evaluator.num_stages
+    num_vars = evaluator.num_vars
+    inv_symmetry = evaluator.inv_symmetry
+    populate_u!(evaluator, x)
+    @threads for var_idx = 1 : num_vars
+        @inbounds v = evaluator.vs[threadid()]
+        populate_v!(evaluator, v, x, var_idx - 1)
+        @inbounds jac[1, var_idx] = T(var_idx + num_stages > num_vars)
+        let
+            n = num_stages - 1
+            m = num_vars - n
+            result = dot_inplace(n, v, 0, x, m)
+            if var_idx + n > num_vars
+                @inbounds result += u[var_idx - m]
+            end
+            @inbounds jac[2, var_idx] = result
+        end
+        for round in evaluator.rounds
+            for (res_index, dst_begin, dst_end, _, _) in round
+                n = dst_end - dst_begin + 1
+                m = num_vars - n
+                result = dot_inplace(n, v, dst_begin - 1, x, m)
+                if var_idx + n > num_vars
+                    @inbounds result += u[dst_begin - 1 + var_idx - m]
+                end
+                result *= inv_symmetry[res_index]
                 @inbounds jac[res_index, var_idx] = result
             end
         end

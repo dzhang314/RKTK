@@ -163,6 +163,14 @@ function butcher_density(tree::RootedTree)::Int
     result
 end
 
+function butcher_symmetry(tree::RootedTree)::Int
+    result = 1
+    for (subtree, multiplicity) in tree.children
+        result *= butcher_symmetry(subtree) * factorial(multiplicity)
+    end
+    result
+end
+
 ################################################################################
 
 function orthonormalize_columns!(mat::Matrix{T})::Nothing where {T <: Real}
