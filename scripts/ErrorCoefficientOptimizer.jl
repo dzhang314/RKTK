@@ -166,20 +166,31 @@ log("Successfully read initial point.")
 function main()
     x = INPUT_POINT[:]
     compute_error_coefficients(x)
-    println(approx_norm(ERROR_COEFFS[1206:end]))
+    old_norm = approx_norm(ERROR_COEFFS[1206:end])
+    println(old_norm)
     speed = 2500.0
     while true
-        for _ = 1 : 100
+        for _ = 1 : 1000
             force = approx_force(x)
-            force *= inv(-speed * approx_norm(force))
-            x, multiplier = perturb(x, force, 1.0)
-            if multiplier == 1.0
-                speed -= 10.0
-            else
-                speed += 100.0
+            while true
+                force *= inv(-speed * approx_norm(force))
+                x_new, multiplier = perturb(x, force, 1.0)
+                compute_error_coefficients(x_new)
+                new_norm = approx_norm(ERROR_COEFFS[1206:end])
+                if new_norm < old_norm
+                    x = x_new
+                    old_norm = new_norm
+                    if multiplier == 1.0
+                        speed -= 100.0
+                    else
+                        speed += 100.0
+                    end
+                    println(new_norm, " ", speed, " ", multiplier)
+                    break
+                else
+                    speed *= 1.2
+                end
             end
-            compute_error_coefficients(x)
-            println(approx_norm(ERROR_COEFFS[1206:end]), " ", speed, " ", multiplier)
         end
         filename = format(now(), dateformat"RKTK-\ERROPT-yyyymmdd-HHMMSS-sss.txt")
         log("Writing points to file: ", filename)
