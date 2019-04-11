@@ -403,6 +403,7 @@ end
 
 function evaluate_residual!(res::Vector{T}, x::Vector{T},
         evaluator::RKOCEvaluator{T})::Nothing where {T <: Real}
+    @assert(length(x) == evaluator.num_vars)
     u = evaluator.u
     num_stages = evaluator.num_stages
     num_vars = evaluator.num_vars
@@ -447,6 +448,7 @@ end
 
 function evaluate_error_coefficients!(res::Vector{T}, x::Vector{T},
         evaluator::RKOCEvaluator{T})::Nothing where {T <: Real}
+    @assert(length(x) == evaluator.num_vars)
     u = evaluator.u
     num_stages = evaluator.num_stages
     num_vars = evaluator.num_vars
@@ -494,6 +496,7 @@ end
 
 function evaluate_jacobian!(jac::Matrix{T}, x::Vector{T},
         evaluator::RKOCEvaluator{T})::Nothing where {T <: Real}
+    @assert(length(x) == evaluator.num_vars)
     u = evaluator.u
     num_stages = evaluator.num_stages
     num_vars = evaluator.num_vars
@@ -545,6 +548,7 @@ end
 
 function evaluate_error_jacobian!(jac::Matrix{T}, x::Vector{T},
         evaluator::RKOCEvaluator{T})::Nothing where {T <: Real}
+    @assert(length(x) == evaluator.num_vars)
     u = evaluator.u
     num_stages = evaluator.num_stages
     num_vars = evaluator.num_vars
