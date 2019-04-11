@@ -3,6 +3,8 @@ module RKTK2
 export RKOCEvaluator, evaluate_residual!, evaluate_jacobian!,
     evaluate_error_coefficients!, evaluate_error_jacobian!
 
+import Base: adjoint
+
 using Base.Threads: @threads, nthreads, threadid
 
 using DZMisc: dbl, RootedTree, rooted_tree_count, rooted_trees,
@@ -593,6 +595,29 @@ function evaluate_error_jacobian!(jac::Matrix{T}, x::Vector{T},
             end
         end
     end
+end
+
+################################################################################
+
+struct RKOCEvaluatorAdjointProxy{T <: Real}
+    evaluator::RKOCEvaluator{T}
+end
+
+function adjoint(evaluator::RKOCEvaluator{T}) where {T <: Real}
+    RKOCEvaluatorAdjointProxy{T}(evaluator)
+end
+
+function (evaluator::RKOCEvaluator{T})(x::Vector{T}) where {T <: Real}
+    residual = Vector{T}(undef, evaluator.num_constrs)
+    evaluate_residual!(residual, x, evaluator)
+    residual
+end
+
+function (proxy::RKOCEvaluatorAdjointProxy{T})(x::Vector{T}) where {T <: Real}
+    jacobian = Matrix{T}(undef,
+                         proxy.evaluator.num_constrs, proxy.evaluator.num_vars)
+    evaluate_jacobian!(jacobian, x, proxy.evaluator)
+    jacobian
 end
 
 end # module RKTK2
