@@ -4,7 +4,7 @@ export dbl, scale, integer_partitions,
     RootedTree, rooted_trees, rooted_tree_count, butcher_density,
     orthonormalize_columns!,
     norm, norm2, normalize!, approx_norm, approx_norm2, approx_normalize!,
-    quadratic_line_search
+    quadratic_line_search, update_inverse_hessian!
 
 using LinearAlgebra: dot, mul!
 
@@ -177,25 +177,51 @@ function orthonormalize_columns!(mat::Matrix{T})::Nothing where {T <: Real}
     m = size(mat, 1)
     n = size(mat, 2)
     for j = 1 : n
-        for k = 1 : j - 1
+        let # normalize j'th column
+            acc = zero(T)
+            @simd for i = 1 : m
+                @inbounds acc += abs2(mat[i, j])
+            end
+            acc = inv(sqrt(acc))
+            @simd ivdep for i = 1 : m
+                @inbounds mat[i, j] *= acc
+            end
+        end
+        for k = j + 1 : n # orthogonalize k'th column against j'th column
             acc = zero(T)
             @simd for i = 1 : m
                 @inbounds acc += mat[i, j] * mat[i, k]
             end
             @simd ivdep for i = 1 : m
-                @inbounds mat[i, j] -= acc * mat[i, k]
+                @inbounds mat[i, k] -= acc * mat[i, j]
             end
-        end
-        acc = zero(T)
-        @simd for i = 1 : m
-            @inbounds acc += abs2(mat[i, j])
-        end
-        acc = inv(sqrt(acc))
-        @simd ivdep for i = 1 : m
-            @inbounds mat[i, j] *= acc
         end
     end
 end
+
+# function orthonormalize_columns!(mat::Matrix{T})::Nothing where {T <: Real}
+#     m = size(mat, 1)
+#     n = size(mat, 2)
+#     for j = 1 : n
+#         for k = 1 : j - 1
+#             acc = zero(T)
+#             @simd for i = 1 : m
+#                 @inbounds acc += mat[i, j] * mat[i, k]
+#             end
+#             @simd ivdep for i = 1 : m
+#                 @inbounds mat[i, j] -= acc * mat[i, k]
+#             end
+#         end
+#         acc = zero(T)
+#         @simd for i = 1 : m
+#             @inbounds acc += abs2(mat[i, j])
+#         end
+#         acc = inv(sqrt(acc))
+#         @simd ivdep for i = 1 : m
+#             @inbounds mat[i, j] *= acc
+#         end
+#     end
+# end
 
 ################################################################################
 
