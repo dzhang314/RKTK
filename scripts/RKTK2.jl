@@ -5,7 +5,8 @@ export RKOCEvaluator, evaluate_residual!, evaluate_jacobian!,
 
 using Base.Threads: @threads, nthreads, threadid
 
-using DZMisc: dbl, RootedTree, rooted_trees, butcher_density, butcher_symmetry
+using DZMisc: dbl, RootedTree, rooted_tree_count, rooted_trees,
+    butcher_density, butcher_symmetry
 
 ################################################################################
 
@@ -127,11 +128,91 @@ end
 
 ################################################################################
 
+function require!(required::Vector{Bool},
+        dependencies::Vector{Vector{Int}}, index::Int)::Nothing
+    if !required[index]
+        required[index] = true
+        for dep in dependencies[index]
+            require!(required, dependencies, dep)
+        end
+    end
+end
+
+function assert_requirements_satisfied(required::Vector{Bool},
+        dependencies::Vector{Vector{Int}}, indices::Vector{Int})::Nothing
+    @assert(all(required[indices]))
+    for index = 1 : length(dependencies)
+        if required[index]
+            @assert(all(required[dep] for dep in dependencies[index]))
+        end
+    end
+end
+
+function included_indices(mask::Vector{Bool})::Vector{Int}
+    result = Vector{Int}(undef, sum(mask))
+    count = 0
+    for index = 1 : length(mask)
+        if mask[index]
+            result[count += 1] = index
+        end
+    end
+    result
+end
+
+function restricted_indices(mask::Vector{Bool})::Vector{Int}
+    result = Vector{Int}(undef, length(mask))
+    count = 0
+    for index = 1 : length(mask)
+        if mask[index]
+            result[index] = (count += 1)
+        else
+            result[index] = 0
+        end
+    end
+    result
+end
+
+function inverse_index_table(indices::Vector{Int}, n::Int)
+    result = [0 for _ = 1 : n]
+    for (i, j) in enumerate(indices)
+        result[j] = i
+    end
+    result
+end
+
+function restricted_trees_dependencies(indices::Vector{Int})
+    max_index = maximum(indices)
+    order = 1
+    total_tree_count = rooted_tree_count(order)
+    while total_tree_count < max_index
+        total_tree_count += rooted_tree_count(order += 1)
+    end
+    trees_of_order = rooted_trees(order)
+    full_dependencies = dependency_table(trees_of_order)
+    required = [false for _ = 1 : length(full_dependencies)]
+    for index in indices
+        require!(required, full_dependencies, index)
+    end
+    assert_requirements_satisfied(required, full_dependencies, indices)
+    included = included_indices(required)
+    restrict = restricted_indices(required)
+    restricted_trees = vcat(trees_of_order...)[included]
+    restricted_dependencies = Vector{Int}[]
+    for index in included
+        push!(restricted_dependencies, restrict[full_dependencies[index]])
+    end
+    (restricted_trees, restricted_dependencies,
+        inverse_index_table(restrict[indices], length(included)))
+end
+
+################################################################################
+
 struct RKOCEvaluator{T <: Real}
     order::Int
     num_stages::Int
     num_vars::Int
     num_constrs::Int
+    output_indices::Vector{Int}
     rounds::Vector{Vector{NTuple{5,Int}}}
     inv_density::Vector{T}
     inv_symmetry::Vector{T}
@@ -140,6 +221,8 @@ struct RKOCEvaluator{T <: Real}
 end
 
 function RKOCEvaluator{T}(order::Int, num_stages::Int) where {T <: Real}
+    # TODO: This assertion should not be necessary.
+    @assert(order >= 2)
     num_vars = div(num_stages * (num_stages + 1), 2)
     trees_of_order = rooted_trees(order)
     num_constrs = sum(length.(trees_of_order))
@@ -152,9 +235,34 @@ function RKOCEvaluator{T}(order::Int, num_stages::Int) where {T <: Real}
     for (i, g) in enumerate(generation)
         if g > 1; push!(rounds[g - 1], instructions[i]); end
     end
-    RKOCEvaluator{T}(order, num_stages, num_vars, num_constrs, rounds,
+    RKOCEvaluator{T}(order, num_stages, num_vars, num_constrs, Int[], rounds,
         inv.(T.(butcher_density.(vcat(trees_of_order...)))),
         inv.(T.(butcher_symmetry.(vcat(trees_of_order...)))),
+        Vector{T}(undef, table_size),
+        [Vector{T}(undef, table_size) for _ = 1 : nthreads()])
+end
+
+function RKOCEvaluator{T}(indices::Vector{Int},
+        num_stages::Int) where {T <: Real}
+    # TODO: These assertions should not be necessary.
+    @assert(indices[1] == 1)
+    @assert(indices[2] == 2)
+    num_vars = div(num_stages * (num_stages + 1), 2)
+    trees, dependencies, output_indices =
+        restricted_trees_dependencies(indices)
+    num_constrs = length(indices)
+    generation = generation_table(dependencies)
+    ranges = range_table(dependencies, num_stages)
+    table_size = ranges[end][2]
+    instructions = instruction_table(dependencies, ranges)
+    rounds = [NTuple{5,Int}[] for _ = 1 : maximum(generation) - 1]
+    for (i, g) in enumerate(generation)
+        if g > 1; push!(rounds[g - 1], instructions[i]); end
+    end
+    RKOCEvaluator{T}(0, num_stages, num_vars, num_constrs,
+        output_indices, rounds,
+        inv.(T.(butcher_density.(trees))),
+        inv.(T.(butcher_symmetry.(trees))),
         Vector{T}(undef, table_size),
         [Vector{T}(undef, table_size) for _ = 1 : nthreads()])
 end
@@ -296,6 +404,7 @@ function evaluate_residual!(res::Vector{T}, x::Vector{T},
     u = evaluator.u
     num_stages = evaluator.num_stages
     num_vars = evaluator.num_vars
+    output_indices = evaluator.output_indices
     inv_density = evaluator.inv_density
     populate_u!(evaluator, x)
     let
@@ -308,44 +417,27 @@ function evaluate_residual!(res::Vector{T}, x::Vector{T},
     end
     @inbounds res[2] = dot_inplace(num_stages - 1, u, 0,
                                    x, num_vars - num_stages + 1) - T(0.5)
-    for round in evaluator.rounds
-        @threads for (res_index, dst_begin, dst_end, _, _) in round
-            j = dst_begin - 1
-            n = dst_end - j
-            @inbounds res[res_index] = (dot_inplace(n, u, j, x, num_vars - n) -
-                                        inv_density[res_index])
-        end
-    end
-end
-
-function evaluate_jacobian!(jac::Matrix{T}, x::Vector{T},
-        evaluator::RKOCEvaluator{T})::Nothing where {T <: Real}
-    u = evaluator.u
-    num_stages = evaluator.num_stages
-    num_vars = evaluator.num_vars
-    populate_u!(evaluator, x)
-    @threads for var_idx = 1 : num_vars
-        @inbounds v = evaluator.vs[threadid()]
-        populate_v!(evaluator, v, x, var_idx - 1)
-        @inbounds jac[1, var_idx] = T(var_idx + num_stages > num_vars)
-        let
-            n = num_stages - 1
-            m = num_vars - n
-            result = dot_inplace(n, v, 0, x, m)
-            if var_idx + n > num_vars
-                @inbounds result += u[var_idx - m]
-            end
-            @inbounds jac[2, var_idx] = result
-        end
+    if length(output_indices) == 0
         for round in evaluator.rounds
-            for (res_index, dst_begin, dst_end, _, _) in round
-                n = dst_end - dst_begin + 1
-                m = num_vars - n
-                result = dot_inplace(n, v, dst_begin - 1, x, m)
-                if var_idx + n > num_vars
-                    @inbounds result += u[dst_begin - 1 + var_idx - m]
+            @threads for (res_index, dst_begin, dst_end, _, _) in round
+                j = dst_begin - 1
+                n = dst_end - j
+                @inbounds res[res_index] =
+                    dot_inplace(n, u, j, x, num_vars - n) -
+                    inv_density[res_index]
+            end
+        end
+    else
+        for round in evaluator.rounds
+            @threads for (res_index, dst_begin, dst_end, _, _) in round
+                output_index = output_indices[res_index]
+                if output_index > 0
+                    j = dst_begin - 1
+                    n = dst_end - j
+                    @inbounds res[output_index] =
+                        dot_inplace(n, u, j, x, num_vars - n) -
+                        inv_density[res_index]
                 end
-                @inbounds jac[res_index, var_idx] = result
             end
         end
     end
@@ -356,6 +448,7 @@ function evaluate_error_coefficients!(res::Vector{T}, x::Vector{T},
     u = evaluator.u
     num_stages = evaluator.num_stages
     num_vars = evaluator.num_vars
+    output_indices = evaluator.output_indices
     inv_density = evaluator.inv_density
     inv_symmetry = evaluator.inv_symmetry
     populate_u!(evaluator, x)
@@ -369,12 +462,81 @@ function evaluate_error_coefficients!(res::Vector{T}, x::Vector{T},
     end
     @inbounds res[2] = dot_inplace(num_stages - 1, u, 0,
                                    x, num_vars - num_stages + 1) - T(0.5)
-    for round in evaluator.rounds
-        @threads for (res_index, dst_begin, dst_end, _, _) in round
-            j = dst_begin - 1
-            n = dst_end - j
-            @inbounds res[res_index] = inv_symmetry[res_index] * (
-                dot_inplace(n, u, j, x, num_vars - n) - inv_density[res_index])
+    if length(output_indices) == 0
+        for round in evaluator.rounds
+            @threads for (res_index, dst_begin, dst_end, _, _) in round
+                j = dst_begin - 1
+                n = dst_end - j
+                @inbounds res[res_index] = inv_symmetry[res_index] * (
+                    dot_inplace(n, u, j, x, num_vars - n) -
+                    inv_density[res_index])
+            end
+        end
+    else
+        for round in evaluator.rounds
+            @threads for (res_index, dst_begin, dst_end, _, _) in round
+                output_index = output_indices[res_index]
+                if output_index > 0
+                    j = dst_begin - 1
+                    n = dst_end - j
+                    @inbounds res[output_index] = inv_symmetry[res_index] * (
+                        dot_inplace(n, u, j, x, num_vars - n) -
+                        inv_density[res_index])
+                end
+            end
+        end
+    end
+end
+
+################################################################################
+
+function evaluate_jacobian!(jac::Matrix{T}, x::Vector{T},
+        evaluator::RKOCEvaluator{T})::Nothing where {T <: Real}
+    u = evaluator.u
+    num_stages = evaluator.num_stages
+    num_vars = evaluator.num_vars
+    output_indices = evaluator.output_indices
+    populate_u!(evaluator, x)
+    @threads for var_idx = 1 : num_vars
+        @inbounds v = evaluator.vs[threadid()]
+        populate_v!(evaluator, v, x, var_idx - 1)
+        @inbounds jac[1, var_idx] = T(var_idx + num_stages > num_vars)
+        let
+            n = num_stages - 1
+            m = num_vars - n
+            result = dot_inplace(n, v, 0, x, m)
+            if var_idx + n > num_vars
+                @inbounds result += u[var_idx - m]
+            end
+            @inbounds jac[2, var_idx] = result
+        end
+        if length(output_indices) == 0
+            for round in evaluator.rounds
+                for (res_index, dst_begin, dst_end, _, _) in round
+                    n = dst_end - dst_begin + 1
+                    m = num_vars - n
+                    result = dot_inplace(n, v, dst_begin - 1, x, m)
+                    if var_idx + n > num_vars
+                        @inbounds result += u[dst_begin - 1 + var_idx - m]
+                    end
+                    @inbounds jac[res_index, var_idx] = result
+                end
+            end
+        else
+            for round in evaluator.rounds
+                for (res_index, dst_begin, dst_end, _, _) in round
+                    output_index = output_indices[res_index]
+                    if output_index > 0
+                        n = dst_end - dst_begin + 1
+                        m = num_vars - n
+                        result = dot_inplace(n, v, dst_begin - 1, x, m)
+                        if var_idx + n > num_vars
+                            @inbounds result += u[dst_begin - 1 + var_idx - m]
+                        end
+                        @inbounds jac[output_index, var_idx] = result
+                    end
+                end
+            end
         end
     end
 end
@@ -384,6 +546,7 @@ function evaluate_error_jacobian!(jac::Matrix{T}, x::Vector{T},
     u = evaluator.u
     num_stages = evaluator.num_stages
     num_vars = evaluator.num_vars
+    output_indices = evaluator.output_indices
     inv_symmetry = evaluator.inv_symmetry
     populate_u!(evaluator, x)
     @threads for var_idx = 1 : num_vars
@@ -399,16 +562,34 @@ function evaluate_error_jacobian!(jac::Matrix{T}, x::Vector{T},
             end
             @inbounds jac[2, var_idx] = result
         end
-        for round in evaluator.rounds
-            for (res_index, dst_begin, dst_end, _, _) in round
-                n = dst_end - dst_begin + 1
-                m = num_vars - n
-                result = dot_inplace(n, v, dst_begin - 1, x, m)
-                if var_idx + n > num_vars
-                    @inbounds result += u[dst_begin - 1 + var_idx - m]
+        if length(output_indices) == 0
+            for round in evaluator.rounds
+                for (res_index, dst_begin, dst_end, _, _) in round
+                    n = dst_end - dst_begin + 1
+                    m = num_vars - n
+                    result = dot_inplace(n, v, dst_begin - 1, x, m)
+                    if var_idx + n > num_vars
+                        @inbounds result += u[dst_begin - 1 + var_idx - m]
+                    end
+                    result *= inv_symmetry[res_index]
+                    @inbounds jac[res_index, var_idx] = result
                 end
-                result *= inv_symmetry[res_index]
-                @inbounds jac[res_index, var_idx] = result
+            end
+        else
+            for round in evaluator.rounds
+                for (res_index, dst_begin, dst_end, _, _) in round
+                    output_index = output_indices[res_index]
+                    if output_index > 0
+                        n = dst_end - dst_begin + 1
+                        m = num_vars - n
+                        result = dot_inplace(n, v, dst_begin - 1, x, m)
+                        if var_idx + n > num_vars
+                            @inbounds result += u[dst_begin - 1 + var_idx - m]
+                        end
+                        result *= inv_symmetry[res_index]
+                        @inbounds jac[output_index, var_idx] = result
+                    end
+                end
             end
         end
     end
