@@ -185,9 +185,8 @@ end
 function restricted_trees_dependencies(indices::Vector{Int})
     max_index = maximum(indices)
     order = 1
-    total_tree_count = rooted_tree_count(order)
-    while total_tree_count < max_index
-        total_tree_count += rooted_tree_count(order += 1)
+    while max_index > rooted_tree_count(order)
+        order += 1
     end
     trees_of_order = rooted_trees(order)
     full_dependencies = dependency_table(trees_of_order)
