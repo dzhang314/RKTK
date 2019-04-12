@@ -95,6 +95,19 @@ function MultiFloat64{N}(x::UInt128) where {N}
     MultiFloat64{N}((x0, x1, x2, ntuple(_ -> 0.0, N - 3)...))
 end
 
+function MultiFloat64{N}(x::BigInt) where {N}
+    y = Vector{Float64}(undef, N)
+    for i = 1 : N
+        y[i] = Float64(x)
+        x -= BigInt(y[i])
+    end
+    MultiFloat64{N}((y...,))
+end
+
+function MultiFloat64{N}(x::Rational{T}) where {N, T}
+    MultiFloat64{N}(numerator(x)) / MultiFloat64{N}(denominator(x))
+end
+
 ##################################################### CONVERSION OF MULTIFLOAT64
 ########################################################### TO AND FROM BIGFLOAT
 
