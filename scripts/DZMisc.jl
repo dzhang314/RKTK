@@ -4,7 +4,7 @@ export dbl, scale, integer_partitions,
     RootedTree, rooted_trees, rooted_tree_count, butcher_density,
     orthonormalize_columns!,
     norm, norm2, normalize!, approx_norm, approx_norm2, approx_normalize!,
-    quadratic_line_search, update_inverse_hessian!
+    quadratic_line_search, quadratic_search, update_inverse_hessian!
 
 using LinearAlgebra: dot, mul!
 
@@ -301,15 +301,18 @@ function _qls_minimum_low(f0, f1, f2)
 end
 
 function quadratic_line_search(f, f0, x1, args...)
+    if isnan(f0)
+        return zero(x1), f0
+    end
     f1 = f(x1, args...)
     if isnan(f1)
-        return zero(x1), f0
+        return quadratic_line_search(f, f0, scale(0.5, x1), args...)
     end
     if f1 < f0
         while true
             x2 = scale(2.0, x1)
             f2 = f(x2, args...)
-            if f2 >= f1
+            if (f2 >= f1) || isnan(f2)
                 x3 = x1 * _qls_minimum_high(f0, f1, f2)
                 f3 = f(x3, args...)
                 return _qls_best(f0, x1, f1, x2, f2, x3, f3)
@@ -333,6 +336,10 @@ function quadratic_line_search(f, f0, x1, args...)
             end
         end
     end
+end
+
+function quadratic_search(f, x1, args...)
+    quadratic_line_search(f, f(zero(x1), args...), x1, args...)
 end
 
 ################################################################################
