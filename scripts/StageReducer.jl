@@ -1,4 +1,5 @@
 using LinearAlgebra: I, dot, qr
+using Printf
 
 push!(LOAD_PATH, @__DIR__)
 using RKTK2
@@ -11,14 +12,23 @@ const THRESHOLD = AccurateReal(1e-50)
 ################################################################################
 
 function say(args...)
+    print("\33[2K\r")
     print(args...)
-    print('\r')
     flush(stdout)
 end
 
 function log(args...)
+    print("\33[2K\r")
     println(args...)
     flush(stdout)
+end
+
+function numstr(x)
+    @sprintf("%#-27.20g", BigFloat(x))
+end
+
+function shortstr(x)
+    @sprintf("%#.5g", BigFloat(x))
 end
 
 function linearly_independent_column_indices!(
@@ -94,15 +104,15 @@ end
 
 ################################################################################
 
-function objective(x)
-    x[end]^2
-end
+# function objective(x)
+#     x[end]^2
+# end
 
-function gradient(x)
-    result = zero(x)
-    result[end] = dbl(x[end])
-    result
-end
+# function gradient(x)
+#     result = zero(x)
+#     result[end] = dbl(x[end])
+#     result
+# end
 
 function constrain_step(x, step, evaluator)
     constraint_jacobian = copy(transpose(evaluator'(x)))
@@ -130,6 +140,16 @@ end
 
 ################################################################################
 
+log("                ______ _   _______ _   __")
+log("                | ___ \\ | / /_   _| | / /   Version  2.1")
+log("                | |_/ / |/ /  | | | |/ /")
+log("                |    /|    \\  | | |    \\   David K. Zhang")
+log("                | |\\ \\| |\\  \\ | | | |\\  \\     (c) 2019")
+log("                |_| \\_\\_| \\_/ |_| |_| \\_/")
+log()
+log("RKTK is free software distributed under the terms of the MIT license.")
+log()
+
 if length(ARGS) != 1
     log("Usage: julia StageReducer.jl <input-file>")
     exit()
@@ -151,12 +171,43 @@ const ACTIVE_CONSTRAINTS = RKOCEvaluator{AccurateReal}(
     ACTIVE_CONSTRAINT_INDICES, NUM_STAGES)
 log("    ", ACTIVE_CONSTRAINTS.num_constrs, " out of ",
     FULL_CONSTRAINTS.num_constrs, " active constraints.")
-log("    Constraint thresholds: [", -log2(Float64(LO)), " | ",
-    -log2(Float64(THRESHOLD)), " | ", -log2(Float64(HI)), "]")
+log("    Constraint thresholds: [",
+    shortstr(-log2(BigFloat(LO))), " | ",
+    shortstr(-log2(BigFloat(THRESHOLD))), " | ",
+    shortstr(-log2(BigFloat(HI))), "]")
+log()
+
+const ERROR_EVALUATOR = RKOCEvaluator{AccurateReal}(
+    Vector{Int}(rooted_tree_count(ORDER) + 1 : rooted_tree_count(ORDER + 1)),
+    NUM_STAGES)
+
+function objective(x)
+    norm2(ERROR_EVALUATOR(x))
+end
+
+function gradient(x)
+    dbl.(transpose(ERROR_EVALUATOR'(x)) * ERROR_EVALUATOR(x))
+end
 
 const OPT = ConstrainedBFGSOptimizer{AccurateReal}(
     objective(REFINED_POINT),
     AccurateReal(0.00001))
+
+function print_table_header()
+    log("       Objective value       │  Constrained gradient norm  │",
+        "       Last step size        │ Type")
+    log("─────────────────────────────┼─────────────────────────────┼",
+        "─────────────────────────────┼──────")
+end
+
+function print_table_row(obj_value, grad_norm, step_size, type)
+    log(" ",
+        numstr(obj_value), " │ ",
+        numstr(grad_norm), " │ ",
+        numstr(step_size), " │ ",
+        type)
+end
+
 
 function main()
     x = copy(REFINED_POINT)
@@ -164,13 +215,10 @@ function main()
 
     cons_grad = constrain_step(x, gradient(x), ACTIVE_CONSTRAINTS)
     cons_grad_norm = norm(cons_grad)
-    log(Float64(OPT.objective_value[]), " | ",
-        Float64(cons_grad_norm), " | ",
-        Float64(OPT.last_step_size[]), " | NONE")
+    print_table_header()
+    print_table_row(OPT.objective_value[], cons_grad_norm, 0, "NONE")
 
     while true
-
-        OPT.last_step_size[] = AccurateReal(0.00001)
 
         say("Performing gradient descent step...")
         grad_step_size, obj_grad = quadratic_search(constrained_step_value,
@@ -199,9 +247,8 @@ function main()
                 OPT.objective_value[] = obj_bfgs
             cons_grad = cons_grad_new
             cons_grad_norm = cons_grad_norm_new
-            log(Float64(OPT.objective_value[]), " | ",
-                Float64(cons_grad_norm), " | ",
-                Float64(OPT.last_step_size[]), " | BFGS")
+            print_table_row(OPT.objective_value[], cons_grad_norm,
+                OPT.last_step_size[], "BFGS")
         elseif obj_grad < OPT.objective_value[]
             x, _ = constrain(x - (grad_step_size / cons_grad_norm) * cons_grad,
                 ACTIVE_CONSTRAINTS)
@@ -210,19 +257,20 @@ function main()
             OPT.objective_value[] = obj_grad
             cons_grad = constrain_step(x, gradient(x), ACTIVE_CONSTRAINTS)
             cons_grad_norm = norm(cons_grad)
-            log(Float64(OPT.objective_value[]), " | ",
-                Float64(cons_grad_norm), " | ",
-                Float64(OPT.last_step_size[]), " | GRAD")
+            print_table_row(OPT.objective_value[], cons_grad_norm,
+                OPT.last_step_size[], "GRAD")
         else
-            log("Neither BFGS step (", Float64(obj_bfgs),
-                ") or gradient step (", Float64(obj_grad),
-                ") are better than previous point (", Float64(OPT.objective_value[]), ")")
-            log(cons_grad_norm)
+            print_table_row(OPT.objective_value[], cons_grad_norm, 0, "DONE")
+            log()
             break
         end
+
     end
 
-    println.(string.(BigFloat.(drop_last_stage(x))))
+    println.(string.(BigFloat.(x)))
+
+    # x_new = drop_last_stage(x)
+    # println.(string.(BigFloat.(x_new)))
 end
 
 main()
