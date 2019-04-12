@@ -685,14 +685,14 @@ end
 
 function (evaluator::RKOCEvaluator{T})(x::Vector{T}) where {T <: Real}
     residual = Vector{T}(undef, evaluator.num_constrs)
-    evaluate_residual!(residual, x, evaluator)
+    evaluate_error_coefficients!(residual, x, evaluator)
     residual
 end
 
 function (proxy::RKOCEvaluatorAdjointProxy{T})(x::Vector{T}) where {T <: Real}
     jacobian = Matrix{T}(undef,
                          proxy.evaluator.num_constrs, proxy.evaluator.num_vars)
-    evaluate_jacobian!(jacobian, x, proxy.evaluator)
+    evaluate_error_jacobian!(jacobian, x, proxy.evaluator)
     jacobian
 end
 
