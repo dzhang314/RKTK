@@ -248,7 +248,7 @@ function main()
             cons_grad = cons_grad_new
             cons_grad_norm = cons_grad_norm_new
             print_table_row(OPT.objective_value[], cons_grad_norm,
-                OPT.last_step_size[], "BFGS")
+                OPT.last_step_size[], "")
         elseif obj_grad < OPT.objective_value[]
             x, _ = constrain(x - (grad_step_size / cons_grad_norm) * cons_grad,
                 ACTIVE_CONSTRAINTS)
