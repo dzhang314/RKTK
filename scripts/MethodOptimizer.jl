@@ -198,8 +198,8 @@ function main()
                 bfgs_step,
                 cons_grad_new - cons_grad,
                 Vector{AccurateReal}(undef, NUM_VARS))
-                OPT.last_step_size[] = bfgs_step_size
-                OPT.objective_value[] = obj_bfgs
+            OPT.last_step_size[] = bfgs_step_size
+            OPT.objective_value[] = obj_bfgs
             cons_grad = cons_grad_new
             cons_grad_norm = cons_grad_norm_new
             print_table_row(OPT.objective_value[], cons_grad_norm,

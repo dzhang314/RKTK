@@ -5,16 +5,10 @@ using Printf: @sprintf
 push!(LOAD_PATH, @__DIR__)
 using MultiprecisionFloats
 using RKTK2
-using DZMisc: approx_norm, orthonormalize_columns!
-using GoldenSectionSearch: golden_section_search
+using DZMisc: say, approx_norm, orthonormalize_columns!
 
 const AccurateReal = Float64x2
 setprecision(256)
-
-function log(args...)
-    println(args...)
-    flush(stdout)
-end
 
 ################################################################################
 
@@ -109,32 +103,17 @@ end
 function constrain(x)
     x_old, obj_old = x, approx_objective(x)
     while true
-        # log("        Computing Jacobian and residual...")
         compute_residual(x_old)
         compute_jacobian(x_old)
-        # log("        Computing step direction...")
         direction = qr!(SHORT_JCT) \ SHORT_RES
         x_new = x_old - direction
         obj_new = approx_objective(x_new)
         if obj_new < obj_old
-            # log("        Accepted step: ", @sprintf("%g", obj_new))
             x_old, obj_old = x_new, obj_new
         else
-            # log("        Rejected step: ", @sprintf("%g", obj_new))
-            step_size, obj_new = golden_section_search(
-                h -> approx_objective(x_new - h * direction), 0, 1, 10)
-            x_new = x_old - step_size * direction
-            if obj_new < obj_old
-                # log("        Accepted GSS step: ", @sprintf("%g", obj_new),
-                #     " (step size ", @sprintf("%g", step_size), ")")
-                x_old, obj_old = x_new, obj_new
-            else
-                # log("        Rejected GSS step: ", @sprintf("%g", obj_new))
-                break
-            end
+            break
         end
     end
-    # log("        Final objective value: ", @sprintf("%g", obj_old))
     x_old, obj_old
 end
 
@@ -157,11 +136,11 @@ const INPUT_FILENAME = maximum(filename
     if isfile(filename) && startswith(filename, "RKTK-ERROPT-")
                         && endswith(filename, ".txt"))
 
-log("Reading initial point from data file: ", INPUT_FILENAME)
+say("Reading initial point from data file: ", INPUT_FILENAME)
 const INPUT_POINT = AccurateReal.(BigFloat.(split(read(INPUT_FILENAME, String))))
 
 @assert length(INPUT_POINT) == NUM_VARS
-log("Successfully read initial point.")
+say("Successfully read initial point.")
 
 function main()
     x = INPUT_POINT[:]
@@ -193,7 +172,7 @@ function main()
             end
         end
         filename = format(now(), dateformat"RKTK-\ERROPT-yyyymmdd-HHMMSS-sss.txt")
-        log("Writing points to file: ", filename)
+        say("Writing points to file: ", filename)
         write(filename, join(string.(BigFloat.(x)), "\n") * "\n")
     end
 end
