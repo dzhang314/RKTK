@@ -3,7 +3,7 @@ module RKTK2
 export RKOCEvaluator, evaluate_residual!, evaluate_jacobian!,
     evaluate_error_coefficients!, evaluate_error_jacobian!,
     compute_stages,
-    rk4_table, rkfnc_table, rkf8_table,
+    rk4_table, extrapolated_euler_table, rkfnc_table, rkf8_table,
     RKSolver, runge_kutta_step!
 
 import Base: adjoint
@@ -713,6 +713,44 @@ end
 rk4_table(::Type{T}) where {T <: Real} = T[
     inv(T(2)), T(0), inv(T(2)), T(0), T(0), T(1),
     inv(T(6)), inv(T(3)), inv(T(3)), inv(T(6))]
+
+# This is the Runge-Kutta method obtained by applying Richardson extrapolation
+# to n independent executions of Euler's method using step sizes h, h/2, h/3,
+# ..., h/n, yielding a method of order n. The methods obtained in this fashion
+# are not practically useful, but provide a simple proof that Runge-Kutta
+# methods exist of any order using a quadratic number of stages.
+function extrapolated_euler_table(order::Int)::Vector{Rational{BigInt}}
+    result = Vector{Rational{BigInt}}[]
+    skip = 0
+    for i = 2 : order
+        for j = 1 : i - 1
+            push!(result, vcat(
+                [Rational{BigInt}(1, i)],
+                zeros(Rational{BigInt}, skip),
+                [Rational{BigInt}(1, i) for _ = 1 : j - 1]))
+        end
+        skip += i - 1
+    end
+    num_stages = div(order * (order - 1), 2) + 1
+    mat = zeros(Rational{BigInt}, order, num_stages)
+    skip = 0
+    for i = 1 : order
+        mat[i, 1] = Rational{BigInt}(1, i)
+        for j = skip + 2 : skip + i
+            mat[i, j] = Rational{BigInt}(1, i)
+        end
+        skip += i - 1
+    end
+    lhs = [Rational{BigInt}(1, j)^i for i = 0 : order - 1, j = 1 : order]
+    rhs = [Rational{BigInt}(i == 1, 1) for i = 1 : order]
+    push!(result, transpose(mat) * (lhs \ rhs))
+    vcat(result...)
+end
+
+function extrapolated_euler_table(::Type{T},
+        order::Int)::Vector{T} where {T <: Real}
+    T.(extrapolated_euler_table(order))
+end
 
 # This is the 5th-order method presented on p. 206 of the following paper.
 # Interestingly, ir is presented not as a standalone method or in an embedded
