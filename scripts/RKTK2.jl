@@ -2,7 +2,9 @@ module RKTK2
 
 export RKOCEvaluator, evaluate_residual!, evaluate_jacobian!,
     evaluate_error_coefficients!, evaluate_error_jacobian!,
-    compute_stages
+    compute_stages,
+    rk4_table, rkfnc_table, rkf8_table,
+    RKSolver, runge_kutta_step!
 
 import Base: adjoint
 
@@ -701,6 +703,96 @@ function compute_stages(x::Vector{T}) where {T <: Real}
     num_stages = div(isqrt(8 * length(x) + 1) - 1, 2)
     @assert(length(x) == div(num_stages * (num_stages + 1), 2))
     num_stages
+end
+
+################################################################################
+
+# This is the classical Runge-Kutta method, for which no introduction should
+# be needed. (If you don't know what this is, you probably need to do some more
+# background reading before using this package!)
+rk4_table(::Type{T}) where {T <: Real} = T[
+    inv(T(2)), T(0), inv(T(2)), T(0), T(0), T(1),
+    inv(T(6)), inv(T(3)), inv(T(3)), inv(T(6))]
+
+# This is the 5th-order method presented on p. 206 of the following paper.
+# Interestingly, ir is presented not as a standalone method or in an embedded
+# pair, but as the highest-order component of an embedded quintuple of orders
+# 5(4,3,2,1). Cash and Karp themselves named it "RKFNC"; I'm not sure why.
+# Cash and Karp 1990, "A Variable Order Runge-Kutta Method for Initial Value
+#                      Problems with Rapidly Varying Right-Hand Sides"
+rkfnc_table(::Type{T}) where {T <: Real} = T[
+    inv(T(5)), T(3)/T(40), T(9)/T(40), T(3)/T(10), T(-9)/T(10), T(6)/T(5),
+    T(-11)/T(54), T(5)/T(2), T(-70)/T(27), T(35)/T(27), T(1631)/T(55296),
+    T(175)/T(512), T(575)/T(13824), T(44275)/T(110592), T(253)/T(4096),
+    T(37)/T(378), T(0), T(250)/T(621), T(125)/T(594), T(0), T(512)/T(1771)]
+
+# This is the 8th-order method presented on p. 65 of Fehlberg's 1968 NASA
+# paper as the higher-order component of the embedded pair RK7(8).
+# Fehlberg 1968, "Classical Fifth-, Sixth-, Seventh-, and Eighth-Order
+#                 Runge-Kutta Formulas with Stepsize Control"
+rkf8_table(::Type{T}) where {T <: Real} = T[
+    T(2)/T(27), inv(T(36)), inv(T(12)), inv(T(24)), T(0), inv(T(8)),
+    T(5)/T(12), T(0), T(-25)/T(16), T(25)/T(16), inv(T(20)), T(0), T(0),
+    inv(T(4)), inv(T(5)), T(-25)/T(108), T(0), T(0), T(125)/T(108),
+    T(-65)/T(27), T(125)/T(54), T(31)/T(300), T(0), T(0), T(0), T(61)/T(225),
+    T(-2)/T(9), T(13)/T(900), T(2)/T(1), T(0), T(0), T(-53)/T(6), T(704)/T(45),
+    T(-107)/T(9), T(67)/T(90), T(3)/T(1), T(-91)/T(108), T(0), T(0),
+    T(23)/T(108), T(-976)/T(135), T(311)/T(54), T(-19)/T(60), T(17)/T(6),
+    T(-1)/T(12), T(2383)/T(4100), T(0), T(0), T(-341)/T(164), T(4496)/T(1025),
+    T(-301)/T(82), T(2133)/T(4100), T(45)/T(82), T(45)/T(164), T(18)/T(41),
+    T(3)/T(205), T(0), T(0), T(0), T(0), T(-6)/T(41), T(-3)/T(205),
+    T(-3)/T(41), T(3)/T(41), T(6)/T(41), T(0), T(-1777)/T(4100), T(0), T(0),
+    T(-341)/T(164), T(4496)/T(1025), T(-289)/T(82), T(2193)/T(4100),
+    T(51)/T(82), T(33)/T(164), T(12)/T(41), T(0), T(1), T(0), T(0), T(0), T(0),
+    T(0), T(34)/T(105), T(9)/T(35), T(9)/T(35), T(9)/T(280), T(9)/T(280), T(0),
+    T(41)/T(840), T(41)/T(840)]
+
+################################################################################
+
+struct RKSolver{T}
+    num_stages::Int
+    coeffs::Vector{T}
+    dimension::Int
+    y_temp::Vector{T}
+    k_temp::Matrix{T}
+end
+
+function RKSolver{T}(coeffs::Vector{T}, dimension::Int) where {T <: Real}
+    num_stages = compute_stages(coeffs)
+    RKSolver{T}(num_stages, coeffs, dimension, Vector{T}(undef, dimension),
+        Matrix{T}(undef, dimension, num_stages))
+end
+
+function runge_kutta_step!(f!, y::Vector{T}, step_size::T,
+        solver::RKSolver{T}) where {T <: Real}
+    s, x, dim, y_temp, k = solver.num_stages, solver.coeffs,
+        solver.dimension, solver.y_temp, solver.k_temp
+    @inbounds f!(view(k, :, 1), y)
+    @simd ivdep for d = 1 : dim
+        @inbounds k[d, 1] *= step_size
+    end
+    n = 1
+    for i = 2 : s
+        @simd ivdep for d = 1 : dim
+            @inbounds y_temp[d] = y[d]
+        end
+        for j = 1 : i - 1
+            @simd ivdep for d = 1 : dim
+                @inbounds y_temp[d] += x[n] * k[d, j]
+            end
+            n += 1
+        end
+        @inbounds f!(view(k, :, i), y_temp)
+        @simd ivdep for d = 1 : dim
+            @inbounds k[d, i] *= step_size
+        end
+    end
+    for i = 1 : s
+        @simd ivdep for d = 1 : dim
+            @inbounds y[d] += x[n] * k[d, i]
+        end
+        n += 1
+    end
 end
 
 end # module RKTK2
