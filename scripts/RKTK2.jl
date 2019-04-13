@@ -64,7 +64,7 @@ function dependency_table(
             tail_factor = RootedTree(0, tree.children[2 : end])
             a = tree_index[string(head_factor)]
             b = tree_index[string(tail_factor)]
-            push!(dependencies, [a, b])             
+            push!(dependencies, [a, b])
         end
     end
     dependencies
@@ -694,6 +694,12 @@ function (proxy::RKOCEvaluatorAdjointProxy{T})(x::Vector{T}) where {T <: Real}
                          proxy.evaluator.num_constrs, proxy.evaluator.num_vars)
     evaluate_error_jacobian!(jacobian, x, proxy.evaluator)
     jacobian
+end
+
+function compute_stages(x::Vector{T}) where {T <: Real}
+    num_stages = div(isqrt(8 * length(x) + 1) - 1, 2)
+    @assert(length(x) == div(num_stages * (num_stages + 1), 2))
+    num_stages
 end
 
 end # module RKTK2

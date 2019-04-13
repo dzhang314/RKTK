@@ -34,12 +34,6 @@ function constrain(x::Vector{T}, evaluator::RKOCEvaluator{T}) where {T <: Real}
     x_old, obj_old
 end
 
-function compute_stages(x::Vector{T}) where {T <: Real}
-    num_stages = div(isqrt(8 * length(x) + 1) - 1, 2)
-    @assert(length(x) == div(num_stages * (num_stages + 1), 2))
-    num_stages
-end
-
 function compute_order(x::Vector{T}, threshold::T) where {T <: Real}
     num_stages = compute_stages(x)
     order = 2
