@@ -1,7 +1,8 @@
 module RKTK2
 
 export RKOCEvaluator, evaluate_residual!, evaluate_jacobian!,
-    evaluate_error_coefficients!, evaluate_error_jacobian!
+    evaluate_error_coefficients!, evaluate_error_jacobian!,
+    compute_stages
 
 import Base: adjoint
 
