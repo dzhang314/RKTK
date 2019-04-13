@@ -6,6 +6,7 @@ export dbl, scale, integer_partitions,
     norm, norm2, normalize!, approx_norm, approx_norm2, approx_normalize!,
     quadratic_line_search, quadratic_search, update_inverse_hessian!
 
+using InteractiveUtils: _dump_function
 using LinearAlgebra: dot, mul!
 
 ################################################################################
@@ -199,30 +200,6 @@ function orthonormalize_columns!(mat::Matrix{T})::Nothing where {T <: Real}
     end
 end
 
-# function orthonormalize_columns!(mat::Matrix{T})::Nothing where {T <: Real}
-#     m = size(mat, 1)
-#     n = size(mat, 2)
-#     for j = 1 : n
-#         for k = 1 : j - 1
-#             acc = zero(T)
-#             @simd for i = 1 : m
-#                 @inbounds acc += mat[i, j] * mat[i, k]
-#             end
-#             @simd ivdep for i = 1 : m
-#                 @inbounds mat[i, j] -= acc * mat[i, k]
-#             end
-#         end
-#         acc = zero(T)
-#         @simd for i = 1 : m
-#             @inbounds acc += abs2(mat[i, j])
-#         end
-#         acc = inv(sqrt(acc))
-#         @simd ivdep for i = 1 : m
-#             @inbounds mat[i, j] *= acc
-#         end
-#     end
-# end
-
 ################################################################################
 
 function norm2(x::Vector{T})::T where {T <: Number}
@@ -357,6 +334,52 @@ function update_inverse_hessian!(B_inv::Matrix{T}, h::T,
             @inbounds B_inv[i, j] += a * (s[i] * sj) - (t[i] * sj + s[i] * tj)
         end
     end
+end
+
+################################################################################
+
+function asm_view(@nospecialize(func), @nospecialize(types))
+
+    # Note: _dump_function is an undocumented internal function that might
+    # be changed or removed in future versions of Julia. This function is
+    # only intended for interactive educational use.
+    
+    code_lines = split.(split(_dump_function(func, types,
+        true,   # Generate native code (as opposed to LLVM IR).
+        false,  # Don't generate wrapper code.
+        true,   # This parameter (strip_ir_metadata) is ignored when dumping native code.
+        true,   # This parameter (dump_module) is ignored when dumping native code.
+        :intel, # I prefer Intel assembly syntax.
+        true,   # This parameter (optimize) is ignored when dumping native code.
+        :source # TODO: What does debuginfo=:source mean?
+    ), '\n'))
+
+    # I've dug through the Julia source code to try to determine the meaning
+    # of the final parameter (debuginfo) of _dump_function, but it's hidden
+    # behind more layers than I'd like to look (passed down into native code).
+    # In the simple cases I've tested, it doesn't seem to make a difference.
+    
+    # Strip all empty lines and comments.
+    filter!(line -> length(line) > 0 && !startswith(line[1], ';'), code_lines)
+    
+    for line in code_lines
+        if length(line) == 1 && line[1] == ".text"
+            # Ignore this line.
+        elseif line[1] == "nop"
+            # Ignore this line.
+        elseif line[1] == "ud2"
+            println("    <unreachable code>")
+        elseif length(line) == 1 && endswith(line[1], ':')
+            println(line[1])
+        elseif line[1] == "mov"
+            line = split(join(line[2:end], ' '), ',')
+            @assert length(line) == 2
+            println("    ", line[1], " =", line[2])
+        else
+            println("    {", join(line, ' '), '}')
+        end
+    end
+
 end
 
 end # module DZMisc
