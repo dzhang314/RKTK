@@ -7,21 +7,9 @@ using DZMisc
 using MultiprecisionFloats
 
 const AccurateReal = Float64x4
-const THRESHOLD = AccurateReal(1e-50)
+const THRESHOLD = AccurateReal(1e-40)
 
 ################################################################################
-
-function say(args...)
-    print("\33[2K\r")
-    print(args...)
-    flush(stdout)
-end
-
-function log(args...)
-    print("\33[2K\r")
-    println(args...)
-    flush(stdout)
-end
 
 function numstr(x)
     @sprintf("%#-27.20g", BigFloat(x))
@@ -29,33 +17,6 @@ end
 
 function shortstr(x)
     @sprintf("%#.5g", BigFloat(x))
-end
-
-function linearly_independent_column_indices!(
-        mat::Matrix{T}, threshold::T) where {T <: Real}
-    indices = Int[]
-    lo, hi, m, n = zero(T), T(Inf), size(mat, 1), size(mat, 2)
-    for i = 1 : n
-        vec = mat[:, i]
-        x = norm(vec)
-        if x > threshold
-            hi = min(hi, x)
-            normalize!(vec)
-            push!(indices, i)
-            for j = i + 1 : n
-                acc = zero(T)
-                for k = 1 : m
-                    acc += vec[k] * mat[k, j]
-                end
-                for k = 1 : m
-                    mat[k, j] -= acc * vec[k]
-                end
-            end
-        else
-            lo = max(lo, x)
-        end
-    end
-    indices, lo, hi
 end
 
 function constrain(x::Vector{T}, evaluator::RKOCEvaluator{T}) where {T <: Real}
@@ -83,7 +44,7 @@ function compute_order(x::Vector{T}, threshold::T) where {T <: Real}
     num_stages = compute_stages(x)
     order = 2
     while true
-        say("    Testing constraints for order ", order, "...")
+        rmk("    Testing constraints for order ", order, "...")
         x_new, obj_new = constrain(x,
             RKOCEvaluator{AccurateReal}(order, num_stages))
         if obj_new <= threshold^2
@@ -140,28 +101,28 @@ end
 
 ################################################################################
 
-log("                ______ _   _______ _   __")
-log("                | ___ \\ | / /_   _| | / /   Version  2.1")
-log("                | |_/ / |/ /  | | | |/ /")
-log("                |    /|    \\  | | |    \\   David K. Zhang")
-log("                | |\\ \\| |\\  \\ | | | |\\  \\     (c) 2019")
-log("                |_| \\_\\_| \\_/ |_| |_| \\_/")
-log()
-log("RKTK is free software distributed under the terms of the MIT license.")
-log()
+say("                ______ _   _______ _   __")
+say("                | ___ \\ | / /_   _| | / /   Version  2.1")
+say("                | |_/ / |/ /  | | | |/ /")
+say("                |    /|    \\  | | |    \\   David K. Zhang")
+say("                | |\\ \\| |\\  \\ | | | |\\  \\     (c) 2019")
+say("                |_| \\_\\_| \\_/ |_| |_| \\_/")
+say()
+say("RKTK is free software distributed under the terms of the MIT license.")
+say()
 
 if length(ARGS) != 1
-    log("Usage: julia StageReducer.jl <input-file>")
+    say("Usage: julia StageReducer.jl <input-file>")
     exit()
 end
 
 const INPUT_POINT = AccurateReal.(BigFloat.(split(read(ARGS[1], String))))
-log("Successfully read input file: " * ARGS[1])
+say("Successfully read input file: " * ARGS[1])
 
 const NUM_VARS = length(INPUT_POINT)
 const NUM_STAGES = compute_stages(INPUT_POINT)
 const REFINED_POINT, ORDER = compute_order(INPUT_POINT, THRESHOLD)
-log("    ", NUM_STAGES, "-stage method of order ", ORDER,
+say("    ", NUM_STAGES, "-stage method of order ", ORDER,
     " (refined by ", approx_norm(REFINED_POINT - INPUT_POINT), ").")
 
 const FULL_CONSTRAINTS = RKOCEvaluator{AccurateReal}(ORDER, NUM_STAGES)
@@ -169,13 +130,13 @@ const ACTIVE_CONSTRAINT_INDICES, HI, LO = linearly_independent_column_indices!(
     copy(transpose(FULL_CONSTRAINTS'(INPUT_POINT))), THRESHOLD)
 const ACTIVE_CONSTRAINTS = RKOCEvaluator{AccurateReal}(
     ACTIVE_CONSTRAINT_INDICES, NUM_STAGES)
-log("    ", ACTIVE_CONSTRAINTS.num_constrs, " out of ",
+say("    ", ACTIVE_CONSTRAINTS.num_constrs, " out of ",
     FULL_CONSTRAINTS.num_constrs, " active constraints.")
-log("    Constraint thresholds: [",
+say("    Constraint thresholds: [",
     shortstr(-log2(BigFloat(LO))), " | ",
     shortstr(-log2(BigFloat(THRESHOLD))), " | ",
     shortstr(-log2(BigFloat(HI))), "]")
-log()
+say()
 
 const ERROR_EVALUATOR = RKOCEvaluator{AccurateReal}(
     Vector{Int}(rooted_tree_count(ORDER) + 1 : rooted_tree_count(ORDER + 1)),
@@ -194,14 +155,14 @@ const OPT = ConstrainedBFGSOptimizer{AccurateReal}(
     AccurateReal(0.00001))
 
 function print_table_header()
-    log("       Objective value       │  Constrained gradient norm  │",
+    say("       Objective value       │  Constrained gradient norm  │",
         "       Last step size        │ Type")
-    log("─────────────────────────────┼─────────────────────────────┼",
+    say("─────────────────────────────┼─────────────────────────────┼",
         "─────────────────────────────┼──────")
 end
 
 function print_table_row(obj_value, grad_norm, step_size, type)
-    log(" ",
+    say(" ",
         numstr(obj_value), " │ ",
         numstr(grad_norm), " │ ",
         numstr(step_size), " │ ",
@@ -220,19 +181,19 @@ function main()
 
     while true
 
-        say("Performing gradient descent step...")
+        rmk("Performing gradient descent step...")
         grad_step_size, obj_grad = quadratic_search(constrained_step_value,
             OPT.last_step_size[], x, cons_grad, cons_grad_norm,
             ACTIVE_CONSTRAINTS, THRESHOLD)
 
-        say("Performing BFGS step...")
+        rmk("Performing BFGS step...")
         bfgs_step = constrain_step(x, inv_hess * cons_grad, ACTIVE_CONSTRAINTS)
         bfgs_step_norm = norm(bfgs_step)
         bfgs_step_size, obj_bfgs = quadratic_search(constrained_step_value,
             OPT.last_step_size[], x, bfgs_step, bfgs_step_norm,
             ACTIVE_CONSTRAINTS, THRESHOLD)
 
-        say("Line searches complete.")
+        rmk("Line searches complete.")
         if obj_bfgs < OPT.objective_value[] && obj_bfgs <= obj_grad
             x, _ = constrain(x - (bfgs_step_size / bfgs_step_norm) * bfgs_step,
             ACTIVE_CONSTRAINTS)
@@ -261,7 +222,7 @@ function main()
                 OPT.last_step_size[], "GRAD")
         else
             print_table_row(OPT.objective_value[], cons_grad_norm, 0, "DONE")
-            log()
+            say()
             break
         end
 

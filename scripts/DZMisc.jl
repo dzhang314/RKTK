@@ -1,13 +1,26 @@
 module DZMisc
 
-export dbl, scale, integer_partitions,
+export rmk, say, dbl, scale, integer_partitions,
     RootedTree, rooted_trees, rooted_tree_count, butcher_density,
-    orthonormalize_columns!,
+    orthonormalize_columns!, linearly_independent_column_indices!,
     norm, norm2, normalize!, approx_norm, approx_norm2, approx_normalize!,
     quadratic_line_search, quadratic_search, update_inverse_hessian!
 
-using InteractiveUtils: _dump_function
 using LinearAlgebra: dot, mul!
+
+################################################################################
+
+function rmk(args...)::Nothing
+    print("\33[2K\r")
+    print(args...)
+    flush(stdout)
+end
+
+function say(args...)::Nothing
+    print("\33[2K\r")
+    println(args...)
+    flush(stdout)
+end
 
 ################################################################################
 
@@ -175,8 +188,7 @@ end
 ################################################################################
 
 function orthonormalize_columns!(mat::Matrix{T})::Nothing where {T <: Real}
-    m = size(mat, 1)
-    n = size(mat, 2)
+    m, n = size(mat, 1), size(mat, 2)
     for j = 1 : n
         let # normalize j'th column
             acc = zero(T)
@@ -198,6 +210,39 @@ function orthonormalize_columns!(mat::Matrix{T})::Nothing where {T <: Real}
             end
         end
     end
+end
+
+function linearly_independent_column_indices!(
+        mat::Matrix{T}, threshold::T) where {T <: Real}
+    indices = Int[]
+    lo, hi, m, n = zero(T), T(Inf), size(mat, 1), size(mat, 2)
+    for i = 1 : n
+        x = zero(T)
+        @simd for k = 1 : m
+            @inbounds x += abs2(mat[k, i])
+        end
+        x = sqrt(x)
+        if x > threshold
+            hi = min(hi, x)
+            push!(indices, i)
+            y = inv(x)
+            @simd ivdep for k = 1 : m
+                @inbounds mat[k, i] *= y
+            end
+            for j = i + 1 : n
+                acc = zero(T)
+                @simd for k = 1 : m
+                    @inbounds acc += mat[k, i] * mat[k, j]
+                end
+                @simd ivdep for k = 1 : m
+                    @inbounds mat[k, j] -= acc * mat[k, i]
+                end
+            end
+        else
+            lo = max(lo, x)
+        end
+    end
+    indices, lo, hi
 end
 
 ################################################################################
@@ -343,7 +388,7 @@ function asm_view(@nospecialize(func), @nospecialize(types))
     # Note: _dump_function is an undocumented internal function that might
     # be changed or removed in future versions of Julia. This function is
     # only intended for interactive educational use.
-    
+
     code_lines = split.(split(_dump_function(func, types,
         true,   # Generate native code (as opposed to LLVM IR).
         false,  # Don't generate wrapper code.
@@ -358,10 +403,10 @@ function asm_view(@nospecialize(func), @nospecialize(types))
     # of the final parameter (debuginfo) of _dump_function, but it's hidden
     # behind more layers than I'd like to look (passed down into native code).
     # In the simple cases I've tested, it doesn't seem to make a difference.
-    
+
     # Strip all empty lines and comments.
     filter!(line -> length(line) > 0 && !startswith(line[1], ';'), code_lines)
-    
+
     for line in code_lines
         if length(line) == 1 && line[1] == ".text"
             # Ignore this line.
