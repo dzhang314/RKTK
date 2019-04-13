@@ -4,8 +4,10 @@ export rmk, say, dbl, scale, integer_partitions,
     RootedTree, rooted_trees, rooted_tree_count, butcher_density,
     orthonormalize_columns!, linearly_independent_column_indices!,
     norm, norm2, normalize!, approx_norm, approx_norm2, approx_normalize!,
-    quadratic_line_search, quadratic_search, update_inverse_hessian!
+    quadratic_line_search, quadratic_search, update_inverse_hessian!,
+    view_asm
 
+using InteractiveUtils: _dump_function
 using LinearAlgebra: dot, mul!
 
 ################################################################################
@@ -383,7 +385,7 @@ end
 
 ################################################################################
 
-function asm_view(@nospecialize(func), @nospecialize(types))
+function view_asm(@nospecialize(func), @nospecialize(types))
 
     # Note: _dump_function is an undocumented internal function that might
     # be changed or removed in future versions of Julia. This function is
@@ -407,24 +409,135 @@ function asm_view(@nospecialize(func), @nospecialize(types))
     # Strip all empty lines and comments.
     filter!(line -> length(line) > 0 && !startswith(line[1], ';'), code_lines)
 
-    for line in code_lines
-        if length(line) == 1 && line[1] == ".text"
-            # Ignore this line.
-        elseif line[1] == "nop"
-            # Ignore this line.
-        elseif line[1] == "ud2"
-            say("    <unreachable code>")
-        elseif length(line) == 1 && endswith(line[1], ':')
-            say(line[1])
-        elseif line[1] == "mov"
-            line = split(join(line[2:end], ' '), ',')
-            @assert length(line) == 2
-            say("    ", line[1], " =", line[2])
-        else
-            say("    {", join(line, ' '), '}')
+    for i = 1 : length(code_lines)
+        if i < length(code_lines) && code_lines[i][1] == "cmp" && code_lines[i+1][1] == "je"
+            args = split(join(code_lines[i][2:end], ' '), ", ")
+            @assert length(args) == 2
+            @assert length(code_lines[i+1]) == 2
+            code_lines[i] = [">>>>if (" * args[1] * " == " * args[2] * ") goto " * code_lines[i+1][2] * ";"]
+            code_lines[i+1] = ["nop"]
+        end
+        if i < length(code_lines) && code_lines[i][1] == "cmp" && code_lines[i+1][1] == "jne"
+            args = split(join(code_lines[i][2:end], ' '), ", ")
+            @assert length(args) == 2
+            @assert length(code_lines[i+1]) == 2
+            code_lines[i] = [">>>>if (" * args[1] * " != " * args[2] * ") goto " * code_lines[i+1][2] * ";"]
+            code_lines[i+1] = ["nop"]
         end
     end
 
+    unknown_count = 0
+    for line in code_lines
+
+        # Preprocessed lines
+        if length(line) == 1 && startswith(line[1], ">>>>")
+            say("    ", line[1][5:end])
+
+        # Unprinted lines
+        elseif length(line) == 1 && line[1] == ".text"
+            # Ignore this line.
+        elseif line[1] == "nop" || line[1] == "vzeroupper"
+            # Ignore this line.
+
+        # Unreachable code
+        elseif line[1] == "ud2"
+            say("    <unreachable code>")
+
+        # Labels
+        elseif length(line) == 1 && endswith(line[1], ':')
+            say(line[1])
+
+        # Moves
+        elseif line[1] == "mov" || line[1] == "movabs" || line[1] == "vmovupd"
+            line = split(join(line[2:end], ' '), ", ")
+            @assert length(line) == 2
+            say("    ", line[1], " = ", line[2], ';')
+        elseif line[1] == "lea"
+            line = split(join(line[2:end], ' '), ", ")
+            @assert length(line) == 2
+            @assert startswith(line[2], '[') && endswith(line[2], ']')
+            say("    ", line[1], " = ", line[2][2:end-1], ';')
+
+        # Increment and decrement
+        elseif line[1] == "inc"
+            @assert length(line) == 2
+            say("    ++", line[2], ';')
+        elseif line[1] == "dec"
+            @assert length(line) == 2
+            say("    --", line[2], ';')
+
+        # Scalar arithmetic and shifts
+        elseif line[1] == "add"
+            line = split(join(line[2:end], ' '), ", ")
+            @assert length(line) == 2
+            say("    ", line[1], " += ", line[2], ';')
+        elseif line[1] == "sub"
+            line = split(join(line[2:end], ' '), ", ")
+            @assert length(line) == 2
+            say("    ", line[1], " -= ", line[2], ';')
+        elseif line[1] == "and"
+            line = split(join(line[2:end], ' '), ", ")
+            @assert length(line) == 2
+            say("    ", line[1], " &= ", line[2], ';')
+        elseif line[1] == "xor"
+            line = split(join(line[2:end], ' '), ", ")
+            @assert length(line) == 2
+            if line[1] == line[2]
+                say("    ", line[1], " = 0;")
+            else
+                say("    ", line[1], " ^= ", line[2], ';')
+            end
+        elseif line[1] == "shl" || line[1] == "sal"
+            line = split(join(line[2:end], ' '), ", ")
+            @assert length(line) == 2
+            say("    ", line[1], " <<= ", line[2], ';')
+        elseif line[1] == "shr"
+            line = split(join(line[2:end], ' '), ", ")
+            @assert length(line) == 2
+            say("    ", line[1], " >>>= ", line[2], ';')
+        elseif line[1] == "sar"
+            line = split(join(line[2:end], ' '), ", ")
+            @assert length(line) == 2
+            say("    ", line[1], " >>= ", line[2], ';')
+
+
+        # Vector arithmetic
+        elseif line[1] == "vaddpd"
+            line = split(join(line[2:end], ' '), ", ")
+            @assert length(line) == 3
+            say("    ", line[1], " = ", line[2], " + ", line[3], ';')
+        elseif line[1] == "vsubpd"
+            line = split(join(line[2:end], ' '), ", ")
+            @assert length(line) == 3
+            say("    ", line[1], " = ", line[2], " - ", line[3], ';')
+        elseif line[1] == "vmulpd"
+            line = split(join(line[2:end], ' '), ", ")
+            @assert length(line) == 3
+            say("    ", line[1], " = ", line[2], " * ", line[3], ';')
+        elseif line[1] == "vdivpd"
+            line = split(join(line[2:end], ' '), ", ")
+            @assert length(line) == 3
+            say("    ", line[1], " = ", line[2], " / ", line[3], ';')
+
+        # Control flow
+        elseif line[1] == "jmp"
+            @assert length(line) == 2
+            say("    goto ", line[2], ';')
+        elseif line[1] == "call"
+            if length(line) == 2
+                say("    ", line[2], "();")
+            else
+                say("    (", join(line[2:end], ' '), ")();")
+            end
+
+        # Unknown instructions
+        else
+            say("    {", join(line, ' '), '}')
+            unknown_count += 1
+        end
+    end
+
+    say("($(unknown_count) unknown instructions)")
 end
 
 end # module DZMisc
