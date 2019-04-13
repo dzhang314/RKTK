@@ -95,21 +95,17 @@ function MultiFloat64{N}(x::UInt128) where {N}
     MultiFloat64{N}((x0, x1, x2, ntuple(_ -> 0.0, N - 3)...))
 end
 
-function MultiFloat64{N}(x::BigInt) where {N}
-    y = Vector{Float64}(undef, N)
-    for i = 1 : N
-        y[i] = Float64(x)
-        x -= BigInt(y[i])
-    end
-    MultiFloat64{N}((y...,))
-end
+################################################### CONVERSION FROM MULTIFLOAT64
+############################################################# TO PRIMITIVE TYPES
 
-function MultiFloat64{N}(x::Rational{T}) where {N, T}
-    MultiFloat64{N}(numerator(x)) / MultiFloat64{N}(denominator(x))
-end
+import Base: Float16, Float32, Float64
+
+Float16(x::MultiFloat64{N}) where {N} = Float16(x.x[1])
+Float32(x::MultiFloat64{N}) where {N} = Float32(x.x[1])
+Float64(x::MultiFloat64{N}) where {N} = x.x[1]
 
 ##################################################### CONVERSION OF MULTIFLOAT64
-########################################################### TO AND FROM BIGFLOAT
+########################################################## TO AND FROM BIG TYPES
 
 import Base: BigFloat
 
@@ -130,14 +126,25 @@ function MultiFloat64{N}(x::BigFloat) where {N}
     end
 end
 
-################################################### CONVERSION FROM MULTIFLOAT64
-############################################################# TO PRIMITIVE TYPES
+function MultiFloat64{N}(x::BigInt) where {N}
+    y = Vector{Float64}(undef, N)
+    for i = 1 : N
+        y[i] = Float64(x)
+        x -= BigInt(y[i])
+    end
+    MultiFloat64{N}((y...,))
+end
 
-import Base: Float16, Float32, Float64
+function MultiFloat64{N}(x::Rational{T}) where {N, T}
+    MultiFloat64{N}(numerator(x)) / MultiFloat64{N}(denominator(x))
+end
 
-Float16(x::MultiFloat64{N}) where {N} = Float16(x.x[1])
-Float32(x::MultiFloat64{N}) where {N} = Float32(x.x[1])
-Float64(x::MultiFloat64{N}) where {N} = x.x[1]
+################################################################### MULTIFLOAT64
+################################################################ PROMOTION RULES
+
+import Base: promote_rule
+
+promote_rule(::Type{MultiFloat64{N}}, ::Type{Int}) where {N} = MultiFloat64{N}
 
 ################################################################################
 ################################################################################

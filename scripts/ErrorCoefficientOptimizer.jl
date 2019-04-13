@@ -160,14 +160,14 @@ function main()
                     x = x_new
                     old_norm = new_norm
                     if multiplier == 1.0
-                        speed -= 100.0
+                        speed *= 0.95
                     else
-                        speed += 100.0
+                        speed *= 2.0
                     end
                     println(new_norm, " ", speed, " ", multiplier)
                     break
                 else
-                    speed *= 1.2
+                    speed *= 2.0
                 end
             end
         end
