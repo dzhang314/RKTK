@@ -413,15 +413,15 @@ function asm_view(@nospecialize(func), @nospecialize(types))
         elseif line[1] == "nop"
             # Ignore this line.
         elseif line[1] == "ud2"
-            println("    <unreachable code>")
+            say("    <unreachable code>")
         elseif length(line) == 1 && endswith(line[1], ':')
-            println(line[1])
+            say(line[1])
         elseif line[1] == "mov"
             line = split(join(line[2:end], ' '), ',')
             @assert length(line) == 2
-            println("    ", line[1], " =", line[2])
+            say("    ", line[1], " =", line[2])
         else
-            println("    {", join(line, ' '), '}')
+            say("    {", join(line, ' '), '}')
         end
     end
 
