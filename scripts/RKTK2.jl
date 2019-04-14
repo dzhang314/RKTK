@@ -804,16 +804,30 @@ function extrapolated_euler_table(::Type{T},
 end
 
 # This is the 5th-order method presented on p. 206 of the following paper.
-# Interestingly, ir is presented not as a standalone method or in an embedded
+# Interestingly, it is presented not as a standalone method or in an embedded
 # pair, but as the highest-order component of an embedded quintuple of orders
 # 5(4,3,2,1). Cash and Karp themselves named it "RKFNC"; I'm not sure why.
+# Numerical Recipes calls this method "RKCK."
 # Cash and Karp 1990, "A Variable Order Runge-Kutta Method for Initial Value
 #                      Problems with Rapidly Varying Right-Hand Sides"
-rkfnc_table(::Type{T}) where {T <: Real} = T[
+rkck5_table(::Type{T}) where {T <: Real} = T[
     inv(T(5)), T(3)/T(40), T(9)/T(40), T(3)/T(10), T(-9)/T(10), T(6)/T(5),
     T(-11)/T(54), T(5)/T(2), T(-70)/T(27), T(35)/T(27), T(1631)/T(55296),
     T(175)/T(512), T(575)/T(13824), T(44275)/T(110592), T(253)/T(4096),
     T(37)/T(378), T(0), T(250)/T(621), T(125)/T(594), T(0), T(512)/T(1771)]
+
+# This is the higher-order component of the 5(4) embedded pair presented on
+# p. 23 of the following paper. Dormand and Prince call this method "RK5(4)7M,"
+# but it has become commonly known as "DOPRI5" following a popular Fortran
+# implementation.
+# Dormand and Prince 1980, "A family of embedded Runge-Kutta formulae"
+dopri5_table(::Type{T}) where {T <: Real} = T[
+    inv(T(5)), T(3)/T(40), T(9)/T(40), T(44)/T(45), T(-56)/T(15), T(32)/T(9),
+    T(19372)/T(6561), T(-25360)/T(2187), T(64448)/T(6561), T(-212)/T(729),
+    T(9017)/T(3168), T(-355)/T(33), T(46732)/T(5247), T(49)/T(176),
+    T(-5103)/T(18656), T(35)/T(384), T(0), T(500)/T(1113), T(125)/T(192),
+    T(-2187)/T(6784), T(11)/T(84), T(35)/T(384), T(0), T(500)/T(1113),
+    T(125)/T(192), T(-2187)/T(6784), T(11)/T(84), T(0)]
 
 # This is the 8th-order method presented on p. 65 of Fehlberg's 1968 NASA
 # paper as the higher-order component of the embedded pair RK7(8).
