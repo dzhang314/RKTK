@@ -12,16 +12,20 @@ using LinearAlgebra: dot, mul!
 
 ################################################################################
 
-function rmk(args...)::Nothing
-    print("\33[2K\r")
-    print(args...)
-    flush(stdout)
+function rmk(args...; verbose::Bool=true)::Nothing
+    if verbose
+        print("\33[2K\r")
+        print(args...)
+        flush(stdout)
+    end
 end
 
-function say(args...)::Nothing
-    print("\33[2K\r")
-    println(args...)
-    flush(stdout)
+function say(args...; verbose::Bool=true)::Nothing
+    if verbose
+        print("\33[2K\r")
+        println(args...)
+        flush(stdout)
+    end
 end
 
 ################################################################################
@@ -249,7 +253,7 @@ end
 
 ################################################################################
 
-function norm2(x::Vector{T})::T where {T <: Number}
+@inline function norm2(x::Vector{T})::T where {T <: Number}
     result = zero(float(real(T)))
     @simd for i = 1 : length(x)
         @inbounds result += abs2(x[i])
@@ -261,7 +265,7 @@ end
     sqrt(norm2(x))
 end
 
-function normalize!(x::Vector{T})::Nothing where {T <: Number}
+@inline function normalize!(x::Vector{T})::Nothing where {T <: Number}
     a = inv(norm(x))
     @simd ivdep for i = 1 : length(x)
         @inbounds x[i] *= a
@@ -270,7 +274,7 @@ end
 
 ################################################################################
 
-function approx_norm2(x::Vector{T})::Float64 where {T <: Number}
+@inline function approx_norm2(x::Vector{T})::Float64 where {T <: Number}
     result = zero(Float64)
     @simd for i = 1 : length(x)
         @inbounds result += abs2(Float64(x[i]))
@@ -282,7 +286,7 @@ end
     sqrt(approx_norm2(x))
 end
 
-function approx_normalize!(x::Vector{T})::Nothing where {T <: Number}
+@inline function approx_normalize!(x::Vector{T})::Nothing where {T <: Number}
     a = inv(approx_norm(x))
     @simd ivdep for i = 1 : length(x)
         @inbounds x[i] *= a
@@ -410,18 +414,22 @@ function view_asm(@nospecialize(func), @nospecialize(types))
     filter!(line -> length(line) > 0 && !startswith(line[1], ';'), code_lines)
 
     for i = 1 : length(code_lines)
-        if i < length(code_lines) && code_lines[i][1] == "cmp" && code_lines[i+1][1] == "je"
+        if (i < length(code_lines) && code_lines[i][1] == "cmp"
+                                   && code_lines[i+1][1] == "je")
             args = split(join(code_lines[i][2:end], ' '), ", ")
             @assert length(args) == 2
             @assert length(code_lines[i+1]) == 2
-            code_lines[i] = [">>>>if (" * args[1] * " == " * args[2] * ") goto " * code_lines[i+1][2] * ";"]
+            code_lines[i] = [">>>>if (" * args[1] * " == " * args[2] *
+                             ") goto " * code_lines[i+1][2] * ";"]
             code_lines[i+1] = ["nop"]
         end
-        if i < length(code_lines) && code_lines[i][1] == "cmp" && code_lines[i+1][1] == "jne"
+        if (i < length(code_lines) && code_lines[i][1] == "cmp"
+                                   && code_lines[i+1][1] == "jne")
             args = split(join(code_lines[i][2:end], ' '), ", ")
             @assert length(args) == 2
             @assert length(code_lines[i+1]) == 2
-            code_lines[i] = [">>>>if (" * args[1] * " != " * args[2] * ") goto " * code_lines[i+1][2] * ";"]
+            code_lines[i] = [">>>>if (" * args[1] * " != " * args[2] *
+                             ") goto " * code_lines[i+1][2] * ";"]
             code_lines[i+1] = ["nop"]
         end
     end

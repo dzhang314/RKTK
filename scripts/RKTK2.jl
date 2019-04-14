@@ -2,15 +2,15 @@ module RKTK2
 
 export RKOCEvaluator, evaluate_residual!, evaluate_jacobian!,
     evaluate_error_coefficients!, evaluate_error_jacobian!,
-    compute_stages,
+    constrain!, compute_order!, compute_stages,
     rk4_table, extrapolated_euler_table, rkfnc_table, rkf8_table,
     RKSolver, runge_kutta_step!
 
-import Base: adjoint
-
 using Base.Threads: @threads, nthreads, threadid
+using LinearAlgebra: ldiv!, qrfactUnblocked!
 
-using DZMisc: dbl, RootedTree, rooted_tree_count, rooted_trees,
+using DZMisc: rmk, say, dbl, norm2,
+    RootedTree, rooted_tree_count, rooted_trees,
     butcher_density, butcher_symmetry
 
 ################################################################################
@@ -678,6 +678,8 @@ end
 
 ################################################################################
 
+import Base: adjoint
+
 struct RKOCEvaluatorAdjointProxy{T <: Real}
     evaluator::RKOCEvaluator{T}
 end
@@ -699,7 +701,56 @@ function (proxy::RKOCEvaluatorAdjointProxy{T})(x::Vector{T}) where {T <: Real}
     jacobian
 end
 
-function compute_stages(x::Vector{T}) where {T <: Real}
+function constrain!(x::Vector{T},
+                    evaluator::RKOCEvaluator{T})::T where {T <: Real}
+    num_vars, num_constrs = evaluator.num_vars, evaluator.num_constrs
+    x_new = Vector{T}(undef, num_vars)
+    residual = Vector{T}(undef, num_constrs)
+    jacobian = Matrix{T}(undef, num_constrs, num_vars)
+    direction = Vector{T}(undef, num_vars)
+    evaluate_error_coefficients!(residual, x, evaluator)
+    obj_old = norm2(residual)
+    while true
+        evaluate_error_jacobian!(jacobian, x, evaluator)
+        ldiv!(direction, qrfactUnblocked!(jacobian), residual)
+        @simd ivdep for i = 1 : num_vars
+            @inbounds x_new[i] = x[i] - direction[i]
+        end
+        evaluate_error_coefficients!(residual, x_new, evaluator)
+        obj_new = norm2(residual)
+        if obj_new < obj_old
+            @simd ivdep for i = 1 : num_vars
+                @inbounds x[i] = x_new[i]
+            end
+            obj_old = obj_new
+        else
+            return sqrt(obj_old)
+        end
+    end
+end
+
+function compute_order!(x::Vector{T}, threshold::T; verbose::Bool=false,
+                        prefix::String="")::Int where {T <: Real}
+    num_stages = compute_stages(x)
+    order = 2
+    while true
+        rmk(prefix, "Deriving conditions for order ", order, "...";
+            verbose=verbose)
+        evaluator = RKOCEvaluator{T}(order, num_stages)
+        rmk(prefix, "Testing constraints for order ", order, "...";
+            verbose=verbose)
+        obj_new = constrain!(x, evaluator)
+        say(prefix, "Residual for order ", lpad(string(order), 2, ' '),
+            ": ", obj_new; verbose=verbose)
+        if obj_new <= threshold^2
+            order += 1
+        else
+            return order - 1
+        end
+    end
+end
+
+function compute_stages(x::Vector{T})::Int where {T <: Real}
     num_stages = div(isqrt(8 * length(x) + 1) - 1, 2)
     @assert(length(x) == div(num_stages * (num_stages + 1), 2))
     num_stages
