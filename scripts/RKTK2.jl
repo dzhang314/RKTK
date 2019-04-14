@@ -742,7 +742,7 @@ function compute_order!(x::Vector{T}, threshold::T; verbose::Bool=false,
         obj_new = constrain!(x, evaluator)
         say(prefix, "Residual for order ", lpad(string(order), 2, ' '),
             ": ", obj_new; verbose=verbose)
-        if obj_new <= threshold^2
+        if obj_new <= threshold
             order += 1
         else
             return order - 1
