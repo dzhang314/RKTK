@@ -3,7 +3,7 @@ module RKTK2
 export RKOCEvaluator, evaluate_residual!, evaluate_jacobian!,
     evaluate_error_coefficients!, evaluate_error_jacobian!,
     constrain!, compute_order!, compute_stages,
-    rk4_table, extrapolated_euler_table, rkfnc_table, rkf8_table,
+    rk4_table, extrapolated_euler_table, rkck5_table, dopri5_table, rkf8_table,
     RKSolver, runge_kutta_step!
 
 using Base.Threads: @threads, nthreads, threadid
