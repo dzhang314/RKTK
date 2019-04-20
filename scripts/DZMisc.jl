@@ -5,7 +5,7 @@ export rmk, say, dbl, scale, integer_partitions,
     orthonormalize_columns!, linearly_independent_column_indices!,
     norm, norm2, normalize!, approx_norm, approx_norm2, approx_normalize!,
     quadratic_line_search, quadratic_search, update_inverse_hessian!,
-    view_asm
+    asm_lines, asm_calls, view_asm
 
 using InteractiveUtils: _dump_function
 using LinearAlgebra: dot, mul!
@@ -389,13 +389,11 @@ end
 
 ################################################################################
 
-function view_asm(@nospecialize(func), @nospecialize(types))
-
+function asm_lines(@nospecialize(func), @nospecialize(types))
     # Note: _dump_function is an undocumented internal function that might
     # be changed or removed in future versions of Julia. This function is
     # only intended for interactive educational use.
-
-    code_lines = split.(split(_dump_function(func, types,
+    lines = split.(split(_dump_function(func, types,
         true,   # Generate native code (as opposed to LLVM IR).
         false,  # Don't generate wrapper code.
         true,   # This parameter (strip_ir_metadata) is ignored when dumping native code.
@@ -404,15 +402,27 @@ function view_asm(@nospecialize(func), @nospecialize(types))
         true,   # This parameter (optimize) is ignored when dumping native code.
         :source # TODO: What does debuginfo=:source mean?
     ), '\n'))
-
     # I've dug through the Julia source code to try to determine the meaning
     # of the final parameter (debuginfo) of _dump_function, but it's hidden
     # behind more layers than I'd like to look (passed down into native code).
     # In the simple cases I've tested, it doesn't seem to make a difference.
 
     # Strip all empty lines and comments.
-    filter!(line -> length(line) > 0 && !startswith(line[1], ';'), code_lines)
+    filter!(line -> length(line) > 0 && !startswith(line[1], ';'), lines)
+    return lines
+end
 
+function asm_calls(@nospecialize(func), @nospecialize(types))
+    setdiff(
+        Set(line[end] for line in asm_lines(func, types) if "offset" in line),
+        ["jl_system_image_data", "jl_throw", "throw_overflowerr_binaryop"])
+end
+
+function view_asm(@nospecialize(func), @nospecialize(types))
+
+    code_lines = asm_lines(func, types)
+
+    MOV_TYPES = ["mov", "movabs", "vmovaps", "vmovups", "vmovapd", "vmovupd"]
     JUMP_TYPES = ["je", "jne", "ja", "jae", "jb", "jbe",
                   "jg", "jge", "jl", "jle"]
     JUMP_PREFIXES = Dict("je" => "", "jne" => "",
@@ -466,16 +476,12 @@ function view_asm(@nospecialize(func), @nospecialize(types))
         elseif line[1] in ["nop", "push", "pop", "vzeroupper"]
             # Ignore this line.
 
-        # Unreachable code
-        elseif line[1] == "ud2"
-            say("    <unreachable code>")
-
         # Labels
         elseif length(line) == 1 && endswith(line[1], ':')
             say(line[1])
 
         # Moves
-        elseif line[1] in ["mov", "movabs", "vmovapd", "vmovupd"]
+        elseif line[1] in MOV_TYPES
             line = split(join(line[2:end], ' '), ", ")
             @assert length(line) == 2
             say("    ", line[1], " = ", line[2], ';')
@@ -484,20 +490,42 @@ function view_asm(@nospecialize(func), @nospecialize(types))
             @assert length(line) == 2
             @assert startswith(line[2], '[') && endswith(line[2], ']')
             say("    ", line[1], " = ", line[2][2:end-1], ';')
+        elseif line[1] == "seto"
+            line = split(join(line[2:end], ' '), ", ")
+            @assert length(line) == 1
+            say("    ", line[1], " = OF;")
 
         # Increment and decrement
         elseif line[1] == "inc"
-            @assert length(line) == 2
-            say("    ++", line[2], ';')
+            if length(line) == 2
+                say("    ++", line[2], ";")
+            else
+                say("    ++(", join(line[2:end], ' '), ");")
+            end
         elseif line[1] == "dec"
-            @assert length(line) == 2
-            say("    --", line[2], ';')
+            if length(line) == 2
+                say("    --", line[2], ";")
+            else
+                say("    --(", join(line[2:end], ' '), ");")
+            end
 
         # Scalar arithmetic and shifts
         elseif line[1] == "add"
             line = split(join(line[2:end], ' '), ", ")
             @assert length(line) == 2
             say("    ", line[1], " += ", line[2], ';')
+        elseif line[1] == "imul"
+            line = split(join(line[2:end], ' '), ", ")
+            if length(line) == 1
+                say("    rdx:rax = (signed) ", line[1], " * rax;")
+            elseif length(line) == 2
+                say("    ", line[1], " *= (signed) ", line[2], ';')
+            elseif length(line) == 3
+                say("    ", line[1], " = (signed) ", line[2],
+                    " * ", line[3], ';')
+            else
+                @assert false
+            end
         elseif line[1] == "sub"
             line = split(join(line[2:end], ' '), ", ")
             @assert length(line) == 2
@@ -539,18 +567,26 @@ function view_asm(@nospecialize(func), @nospecialize(types))
             line = split(line[1], ", ")
             @assert length(line) == 2
             say("    ", line[1], " = ", line[2], "; // scalar")
-        elseif line[1] == "vaddpd"
-            line = split(join(line[2:end], ' '), ", ")
-            @assert length(line) == 3
-            say("    ", line[1], " = ", line[2], " + ", line[3], ';')
         elseif line[1] == "vaddsd"
             line = split(join(line[2:end], ' '), ", ")
             @assert length(line) == 3
             say("    ", line[1], " = ", line[2], " + ", line[3], "; // scalar")
+        elseif line[1] == "vaddpd"
+            line = split(join(line[2:end], ' '), ", ")
+            @assert length(line) == 3
+            say("    ", line[1], " = ", line[2], " + ", line[3], ';')
+        elseif line[1] == "vsubsd"
+            line = split(join(line[2:end], ' '), ", ")
+            @assert length(line) == 3
+            say("    ", line[1], " = ", line[2], " - ", line[3], "; // scalar")
         elseif line[1] == "vsubpd"
             line = split(join(line[2:end], ' '), ", ")
             @assert length(line) == 3
             say("    ", line[1], " = ", line[2], " - ", line[3], ';')
+        elseif line[1] == "vmulsd"
+            line = split(join(line[2:end], ' '), ", ")
+            @assert length(line) == 3
+            say("    ", line[1], " = ", line[2], " * ", line[3], "; // scalar")
         elseif line[1] == "vmulpd"
             line = split(join(line[2:end], ' '), ", ")
             @assert length(line) == 3
@@ -567,6 +603,10 @@ function view_asm(@nospecialize(func), @nospecialize(types))
             else
                 say("    ", line[1], " = ", line[2], " / ", line[3], ';')
             end
+        elseif line[1] in ["vunpcklpd", "vunpckhpd", "vperm2f128", "vblendpd"]
+            line = split(join(line[2:end], ' '), " # ")
+            @assert length(line) == 2
+            say("    ", replace(line[2], "]," => "], "), ';')
 
         # Control flow
         elseif line[1] == "jmp"
@@ -578,6 +618,10 @@ function view_asm(@nospecialize(func), @nospecialize(types))
             else
                 say("    (", join(line[2:end], ' '), ")();")
             end
+        elseif line[1] == "ret"
+            say("    return;")
+        elseif line[1] == "ud2"
+            say("    <unreachable code>")
 
         # Unknown instructions
         else
