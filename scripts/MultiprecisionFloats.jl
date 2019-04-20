@@ -159,12 +159,18 @@ signbit(x::MultiFloat64{N}) where {N} = signbit(x.x[1])
 ################################################################################
 
 import Base: +, -, *
-+(x::Float64, y::MultiFloat64{N}) where {N} = y + x
--(x::MultiFloat64{N}) where {N} = MultiFloat64{N}(ntuple(i -> -x.x[i], N))
--(x::MultiFloat64{N}, y::MultiFloat64{N}) where {N} = x + (-y)
--(x::MultiFloat64{N}, y::Float64) where {N} = x + (-y)
--(x::Float64, y::MultiFloat64{N}) where {N} = -(y + (-x))
-*(x::Float64, y::MultiFloat64{N}) where {N} = y * x
+@inline +(x::Float64, y::MultiFloat64{N}) where {N} = y + x
+@inline -(x::MultiFloat64{N}) where {N} =
+    MultiFloat64{N}(ntuple(i -> -x.x[i], N))
+@inline -(x::MultiFloat64{N}, y::MultiFloat64{N}) where {N} = x + (-y)
+@inline -(x::MultiFloat64{N}, y::Float64) where {N} = x + (-y)
+@inline -(x::Float64, y::MultiFloat64{N}) where {N} = -(y + (-x))
+@inline *(x::Float64, y::MultiFloat64{N}) where {N} = y * x
+
+# TODO: Special-case these operations for a single operand.
+import Base: inv, abs2
+@inline inv(x::MultiFloat64{N}) where {N} = one(MultiFloat64{N}) / x
+@inline abs2(x::MultiFloat64{N}) where {N} = x * x
 
 # TODO: Add accurate comparison operators. Sloppy stop-gap operators for now.
 import Base: ==, !=, <, >, <=, >=
@@ -182,11 +188,11 @@ import Base: ==, !=, <, >, <=, >=
     (x.x[1] > y.x[1]) | ((x.x[1] == y.x[1]) & (x.x[2] >= y.x[2]))
 
 import DZMisc: scale
-scale(a::Float64, x::MultiFloat64{N}) where {N} =
+@inline scale(a::Float64, x::MultiFloat64{N}) where {N} =
     MultiFloat64{N}(ntuple(i -> a * x.x[i], N))
 
 import DZMisc: dbl
-dbl(x::MultiFloat64{N}) where {N} = scale(2.0, x)
+@inline dbl(x::MultiFloat64{N}) where {N} = scale(2.0, x)
 
 ################################################################################
 ################################################################################
