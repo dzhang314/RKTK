@@ -413,24 +413,43 @@ function view_asm(@nospecialize(func), @nospecialize(types))
     # Strip all empty lines and comments.
     filter!(line -> length(line) > 0 && !startswith(line[1], ';'), code_lines)
 
+    JUMP_TYPES = ["je", "jne", "ja", "jae", "jb", "jbe",
+                  "jg", "jge", "jl", "jle"]
+    JUMP_PREFIXES = Dict("je" => "", "jne" => "",
+                         "ja" => "(unsigned) ", "jae" => "(unsigned) ",
+                         "jb" => "(unsigned) ", "jbe" => "(unsigned) ",
+                         "jg" => "(signed) ", "jge" => "(signed) ",
+                         "jl" => "(signed) ", "jle" => "(signed) ")
+    JUMP_SYMBOLS = Dict("je" => " == ", "jne" => " != ",
+                        "ja" => " > ", "jae" => " >= ",
+                        "jb" => " < ", "jbe" => " <= ",
+                        "jg" => " > ", "jge" => " >= ",
+                        "jl" => " < ", "jle" => " <= ")
+
     for i = 1 : length(code_lines)
         if (i < length(code_lines) && code_lines[i][1] == "cmp"
-                                   && code_lines[i+1][1] == "je")
+                                   && code_lines[i+1][1] in JUMP_TYPES)
             args = split(join(code_lines[i][2:end], ' '), ", ")
             @assert length(args) == 2
             @assert length(code_lines[i+1]) == 2
-            code_lines[i] = [">>>>if (" * args[1] * " == " * args[2] *
+            prefix = JUMP_PREFIXES[code_lines[i+1][1]]
+            symbol = JUMP_SYMBOLS[code_lines[i+1][1]]
+            code_lines[i] = [">>>>if (" * prefix * args[1] * symbol * args[2] *
                              ") goto " * code_lines[i+1][2] * ";"]
             code_lines[i+1] = ["nop"]
         end
-        if (i < length(code_lines) && code_lines[i][1] == "cmp"
-                                   && code_lines[i+1][1] == "jne")
+        if (i < length(code_lines) && code_lines[i][1] == "test"
+                                   && code_lines[i+1][1] in JUMP_TYPES)
             args = split(join(code_lines[i][2:end], ' '), ", ")
             @assert length(args) == 2
             @assert length(code_lines[i+1]) == 2
-            code_lines[i] = [">>>>if (" * args[1] * " != " * args[2] *
-                             ") goto " * code_lines[i+1][2] * ";"]
-            code_lines[i+1] = ["nop"]
+            prefix = JUMP_PREFIXES[code_lines[i+1][1]]
+            symbol = JUMP_SYMBOLS[code_lines[i+1][1]]
+            if (args[1] == args[2])
+                code_lines[i] = [">>>>if (" * prefix * args[1] * symbol *
+                                 "0) goto " * code_lines[i+1][2] * ";"]
+                code_lines[i+1] = ["nop"]
+            end
         end
     end
 
@@ -444,7 +463,7 @@ function view_asm(@nospecialize(func), @nospecialize(types))
         # Unprinted lines
         elseif length(line) == 1 && line[1] == ".text"
             # Ignore this line.
-        elseif line[1] == "nop" || line[1] == "vzeroupper"
+        elseif line[1] in ["nop", "push", "pop", "vzeroupper"]
             # Ignore this line.
 
         # Unreachable code
@@ -456,7 +475,7 @@ function view_asm(@nospecialize(func), @nospecialize(types))
             say(line[1])
 
         # Moves
-        elseif line[1] == "mov" || line[1] == "movabs" || line[1] == "vmovupd"
+        elseif line[1] in ["mov", "movabs", "vmovapd", "vmovupd"]
             line = split(join(line[2:end], ' '), ", ")
             @assert length(line) == 2
             say("    ", line[1], " = ", line[2], ';')
@@ -507,13 +526,27 @@ function view_asm(@nospecialize(func), @nospecialize(types))
             line = split(join(line[2:end], ' '), ", ")
             @assert length(line) == 2
             say("    ", line[1], " >>= ", line[2], ';')
+        elseif line[1] == "andn"
+            line = split(join(line[2:end], ' '), ", ")
+            @assert length(line) == 3
+            say("    ", line[1], " = ~", line[2], " & ", line[3], ';')
 
 
         # Vector arithmetic
+        elseif line[1] == "vmovsd"
+            line = split(join(line[2:end], ' '), " # ")
+            @assert 1 <= length(line) <= 2
+            line = split(line[1], ", ")
+            @assert length(line) == 2
+            say("    ", line[1], " = ", line[2], "; // scalar")
         elseif line[1] == "vaddpd"
             line = split(join(line[2:end], ' '), ", ")
             @assert length(line) == 3
             say("    ", line[1], " = ", line[2], " + ", line[3], ';')
+        elseif line[1] == "vaddsd"
+            line = split(join(line[2:end], ' '), ", ")
+            @assert length(line) == 3
+            say("    ", line[1], " = ", line[2], " + ", line[3], "; // scalar")
         elseif line[1] == "vsubpd"
             line = split(join(line[2:end], ' '), ", ")
             @assert length(line) == 3
@@ -526,6 +559,14 @@ function view_asm(@nospecialize(func), @nospecialize(types))
             line = split(join(line[2:end], ' '), ", ")
             @assert length(line) == 3
             say("    ", line[1], " = ", line[2], " / ", line[3], ';')
+        elseif line[1] == "vxorpd"
+            line = split(join(line[2:end], ' '), ", ")
+            @assert length(line) == 3
+            if line[2] == line[3]
+                say("    ", line[1], " = 0.0;")
+            else
+                say("    ", line[1], " = ", line[2], " / ", line[3], ';')
+            end
 
         # Control flow
         elseif line[1] == "jmp"
