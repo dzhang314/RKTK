@@ -928,7 +928,7 @@ function compute_butcher_weights!(m::Matrix{T}, A::Matrix{T},
 end
 
 function backprop_butcher_weights!(u::Matrix{T}, A::Matrix{T}, b::Vector{T},
-        m::Matrix{T}, p::Vector{T}, children::Vector{Vector{Int}},
+        m::Matrix{T}, p::Vector{T}, children::Vector{Int},
         siblings::Vector{Vector{Tuple{Int,Int}}}) where {T}
     num_stages, num_constrs = size(u, 1), size(u, 2)
     @inbounds for r = 0 : num_constrs - 1
@@ -937,7 +937,8 @@ function backprop_butcher_weights!(u::Matrix{T}, A::Matrix{T}, b::Vector{T},
         @simd ivdep for j = 1 : num_stages
             u[j,i] = x * b[j]
         end
-        for c in children[i]
+        c = children[i]
+        if c > 0
             for j = 1 : num_stages
                 @simd for k = 1 : num_stages
                     u[j,i] += A[k,j] * u[k,c]
@@ -953,11 +954,11 @@ function backprop_butcher_weights!(u::Matrix{T}, A::Matrix{T}, b::Vector{T},
 end
 
 function find_children_siblings(dependencies::Vector{Vector{Int}})
-    children = [Int[] for _ in dependencies]
+    children = [0 for _ in dependencies]
     siblings = [Tuple{Int,Int}[] for _ in dependencies]
     for (i, dep) in enumerate(dependencies)
         if length(dep) == 1
-            push!(children[dep[1]], i)
+            children[dep[1]] = i
         elseif length(dep) == 2
             push!(siblings[dep[1]], (dep[2], i))
             push!(siblings[dep[2]], (dep[1], i))
@@ -973,7 +974,7 @@ struct RKOCBackpropEvaluator{T}
     num_stages::Int
     num_constrs::Int
     dependencies::Vector{Vector{Int}}
-    children::Vector{Vector{Int}}
+    children::Vector{Int}
     siblings::Vector{Vector{Tuple{Int,Int}}}
     inv_density::Vector{T}
     m::Matrix{T} # Matrix of Butcher weights
@@ -1016,7 +1017,8 @@ function evaluate_gradient!(gA::Matrix{T}, gb::Vector{T}, A::Matrix{T},
         end
     end
     @inbounds for i = 1 : num_constrs
-        for j in children[i]
+        j = children[i]
+        if j > 0
             for t = 1 : num_stages
                 @simd ivdep for s = 1 : num_stages
                     gA[s,t] += u[s,j] * m[t,i]

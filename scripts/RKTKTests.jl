@@ -91,7 +91,7 @@ for T in (Float32, Float64, Float64x2, Float64x4, Float64x8)
         (Matrix{T}, Matrix{T}, Vector{Vector{Int}})))
     @test 0 == length(asm_calls(backprop_butcher_weights!,
         (Matrix{T}, Matrix{T}, Vector{T}, Matrix{T}, Vector{T},
-            Vector{Vector{Int}}, Vector{Vector{Tuple{Int,Int}}})))
+            Vector{Int}, Vector{Vector{Tuple{Int,Int}}})))
     @test 5 >= length(asm_calls(evaluate_gradient!,
         (Matrix{T}, Vector{T}, Matrix{T}, Vector{T},
             RKOCBackpropEvaluator{T})))
