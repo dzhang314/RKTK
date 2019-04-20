@@ -4,10 +4,10 @@ export RKOCEvaluator, evaluate_residual!, evaluate_jacobian!,
     evaluate_error_coefficients!, evaluate_error_jacobian!,
     constrain!, compute_order!, compute_stages,
     rk4_table, extrapolated_euler_table, rkck5_table, dopri5_table, rkf8_table,
-    RKSolver, runge_kutta_step!
+    RKSolver, runge_kutta_step!, RKOCBackpropEvaluator, evaluate_gradient!
 
 using Base.Threads: @threads, nthreads, threadid
-using LinearAlgebra: ldiv!, qrfactUnblocked!
+using LinearAlgebra: mul!, ldiv!, qrfactUnblocked!
 
 using DZMisc: rmk, say, dbl, norm2,
     RootedTree, rooted_tree_count, rooted_trees,
@@ -896,6 +896,136 @@ function runge_kutta_step!(f!, y::Vector{T}, step_size::T,
         end
         n += 1
     end
+end
+
+################################################################################
+
+function compute_butcher_weights!(m::Matrix{T}, A::Matrix{T},
+        dependencies::Vector{Vector{Int}}) where {T}
+    num_stages, num_constrs = size(m, 1), size(m, 2)
+    @inbounds for i = 1 : num_constrs
+        dep = dependencies[i]
+        n = length(dep)
+        if n == 0
+            @simd ivdep for j = 1 : num_stages
+                m[j,i] = one(T)
+            end
+        elseif n == 1
+            d = dep[1]
+            for j = 1 : num_stages
+                m[j,i] = zero(T)
+                @simd for k = 1 : num_stages
+                    m[j,i] += A[j,k] * m[k,d]
+                end
+            end
+        else
+            d, e = dep[1], dep[2]
+            @simd ivdep for j = 1 : num_stages
+                m[j,i] = m[j,d] * m[j,e]
+            end
+        end
+    end
+end
+
+function backprop_butcher_weights!(u::Matrix{T}, A::Matrix{T}, b::Vector{T},
+        m::Matrix{T}, p::Vector{T}, children::Vector{Vector{Int}},
+        siblings::Vector{Vector{Tuple{Int,Int}}}) where {T}
+    num_stages, num_constrs = size(u, 1), size(u, 2)
+    @inbounds for r = 0 : num_constrs - 1
+        i = num_constrs - r
+        x = p[i]
+        @simd ivdep for j = 1 : num_stages
+            u[j,i] = x * b[j]
+        end
+        for c in children[i]
+            for j = 1 : num_stages
+                @simd for k = 1 : num_stages
+                    u[j,i] += A[k,j] * u[k,c]
+                end
+            end
+        end
+        for (s, t) in siblings[i]
+            @simd ivdep for j = 1 : num_stages
+                u[j,i] += m[j,s] .* u[j,t]
+            end
+        end
+    end
+end
+
+function find_children_siblings(dependencies::Vector{Vector{Int}})
+    children = [Int[] for _ in dependencies]
+    siblings = [Tuple{Int,Int}[] for _ in dependencies]
+    for (i, dep) in enumerate(dependencies)
+        if length(dep) == 1
+            push!(children[dep[1]], i)
+        elseif length(dep) == 2
+            push!(siblings[dep[1]], (dep[2], i))
+            push!(siblings[dep[2]], (dep[1], i))
+        end
+    end
+    children, siblings
+end
+
+################################################################################
+
+struct RKOCBackpropEvaluator{T}
+    order::Int
+    num_stages::Int
+    num_constrs::Int
+    dependencies::Vector{Vector{Int}}
+    children::Vector{Vector{Int}}
+    siblings::Vector{Vector{Tuple{Int,Int}}}
+    inv_density::Vector{T}
+    m::Matrix{T} # Matrix of Butcher weights
+    u::Matrix{T} # Gradients of Butcher weights
+    p::Vector{T} # Vector of doubled residuals
+    q::Vector{T} # Dot products of Butcher weights
+end
+
+function RKOCBackpropEvaluator{T}(order::Int, num_stages::Int) where {T <: Real}
+    trees = rooted_trees(order)
+    num_constrs = sum(length.(trees))
+    dependencies = dependency_table(trees)
+    children, siblings = find_children_siblings(dependencies)
+    inv_density = inv.(T.(butcher_density.(vcat(trees...))))
+    RKOCBackpropEvaluator(order, num_stages, num_constrs,
+        dependencies, children, siblings, inv_density,
+        Matrix{T}(undef, num_stages, num_constrs),
+        Matrix{T}(undef, num_stages, num_constrs),
+        Vector{T}(undef, num_constrs),
+        Vector{T}(undef, num_constrs))
+end
+
+function evaluate_gradient!(gA::Matrix{T}, gb::Vector{T}, A::Matrix{T},
+        b::Vector{T}, evaluator::RKOCBackpropEvaluator{T}) where {T}
+    num_stages, num_constrs = evaluator.num_stages, evaluator.num_constrs
+    inv_density, children = evaluator.inv_density, evaluator.children
+    m, u, p, q = evaluator.m, evaluator.u, evaluator.p, evaluator.q
+    compute_butcher_weights!(m, A, evaluator.dependencies)
+    mul!(q, transpose(m), b)
+    residual = zero(T)
+    @inbounds @simd ivdep for j = 1 : num_constrs
+        x = q[j] - inv_density[j]
+        residual += x * x
+        p[j] = dbl(x)
+    end
+    backprop_butcher_weights!(u, A, b, m, p, children, evaluator.siblings)
+    @inbounds for t = 1 : num_stages
+        @simd ivdep for s = 1 : num_stages
+            gA[s,t] = zero(T)
+        end
+    end
+    @inbounds for i = 1 : num_constrs
+        for j in children[i]
+            for t = 1 : num_stages
+                @simd ivdep for s = 1 : num_stages
+                    gA[s,t] += u[s,j] * m[t,i]
+                end
+            end
+        end
+    end
+    mul!(gb, m, p)
+    residual
 end
 
 end # module RKTK2
