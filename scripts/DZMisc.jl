@@ -412,30 +412,39 @@ function asm_lines(@nospecialize(func), @nospecialize(types))
     return lines
 end
 
+
+const IGNORED_CALLS = ["jl_system_image_data", "jl_throw",
+    "throw_complex_domainerror", "throw_overflowerr_binaryop"]
+const IGNORED_PREFIXES = ["julia_throw_complex_domainerror_"]
+
 function asm_calls(@nospecialize(func), @nospecialize(types))
-    setdiff(
-        Set(line[end] for line in asm_lines(func, types) if "offset" in line),
-        ["jl_system_image_data", "jl_throw", "throw_overflowerr_binaryop"])
+    calls = Set{String}()
+    for line in asm_lines(func, types) if "offset" in line
+            call = line[end]
+            ignored = (call in IGNORED_CALLS) || any(
+                startswith(call, prefix) for prefix in IGNORED_PREFIXES)
+            if !ignored; push!(calls, call); end
+    end end
+    calls
 end
+
+const MOV_TYPES = ["mov", "movabs", "vmovaps", "vmovups", "vmovapd", "vmovupd"]
+const JUMP_TYPES = ["je", "jne", "ja", "jae", "jb", "jbe",
+                    "jg", "jge", "jl", "jle"]
+const JUMP_PREFIXES = Dict("je" => "", "jne" => "",
+                           "ja" => "(unsigned) ", "jae" => "(unsigned) ",
+                           "jb" => "(unsigned) ", "jbe" => "(unsigned) ",
+                           "jg" => "(signed) ", "jge" => "(signed) ",
+                           "jl" => "(signed) ", "jle" => "(signed) ")
+const JUMP_SYMBOLS = Dict("je" => " == ", "jne" => " != ",
+                          "ja" => " > ", "jae" => " >= ",
+                          "jb" => " < ", "jbe" => " <= ",
+                          "jg" => " > ", "jge" => " >= ",
+                          "jl" => " < ", "jle" => " <= ")
 
 function view_asm(@nospecialize(func), @nospecialize(types))
 
     code_lines = asm_lines(func, types)
-
-    MOV_TYPES = ["mov", "movabs", "vmovaps", "vmovups", "vmovapd", "vmovupd"]
-    JUMP_TYPES = ["je", "jne", "ja", "jae", "jb", "jbe",
-                  "jg", "jge", "jl", "jle"]
-    JUMP_PREFIXES = Dict("je" => "", "jne" => "",
-                         "ja" => "(unsigned) ", "jae" => "(unsigned) ",
-                         "jb" => "(unsigned) ", "jbe" => "(unsigned) ",
-                         "jg" => "(signed) ", "jge" => "(signed) ",
-                         "jl" => "(signed) ", "jle" => "(signed) ")
-    JUMP_SYMBOLS = Dict("je" => " == ", "jne" => " != ",
-                        "ja" => " > ", "jae" => " >= ",
-                        "jb" => " < ", "jbe" => " <= ",
-                        "jg" => " > ", "jge" => " >= ",
-                        "jl" => " < ", "jle" => " <= ")
-
     for i = 1 : length(code_lines)
         if (i < length(code_lines) && code_lines[i][1] == "cmp"
                                    && code_lines[i+1][1] in JUMP_TYPES)
@@ -463,7 +472,7 @@ function view_asm(@nospecialize(func), @nospecialize(types))
         end
     end
 
-    unknown_count = 0
+    unknown_instrs = Dict{String,Int}()
     for line in code_lines
 
         # Preprocessed lines
@@ -626,11 +635,20 @@ function view_asm(@nospecialize(func), @nospecialize(types))
         # Unknown instructions
         else
             say("    {", join(line, ' '), '}')
-            unknown_count += 1
+            unknown_instrs[line[1]] = get(unknown_instrs, line[1], 0) + 1
         end
     end
 
-    say("($(unknown_count) unknown instructions)")
+    if length(unknown_instrs) > 0
+        say()
+        freqs = sort!(reverse.(collect(unknown_instrs)), rev=true)
+        total = sum(f[1] for f in freqs)
+        say("$(total) unknown instructions:")
+        for i = 1 : min(length(freqs), 10)
+            freq, name = freqs[i]
+            say("    ", name, " (", freq, ")")
+        end
+    end
 end
 
 end # module DZMisc

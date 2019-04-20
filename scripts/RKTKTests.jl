@@ -39,6 +39,17 @@ test_f64x8_ops(100000)
 
 ################################################################################
 
+for T in (Float32, Float64, Float64x2, Float64x4, Float64x8)
+    @test 0 == length(asm_calls(norm, (Vector{T},)))
+    @test 0 == length(asm_calls(norm2, (Vector{T},)))
+    @test 0 == length(asm_calls(normalize!, (Vector{T},)))
+    @test 0 == length(asm_calls(approx_norm, (Vector{T},)))
+    @test 0 == length(asm_calls(approx_norm2, (Vector{T},)))
+    @test 0 == length(asm_calls(approx_normalize!, (Vector{T},)))
+end
+
+################################################################################
+
 @inline function vdpol!(f, y)
     @inbounds f[1] = y[2]
     @inbounds f[2] = 1000.0 * (1.0 - y[1] * y[1]) * y[2] - y[1]
@@ -92,7 +103,7 @@ for T in (Float32, Float64, Float64x2, Float64x4, Float64x8)
     @test 0 == length(asm_calls(backprop_butcher_weights!,
         (Matrix{T}, Matrix{T}, Vector{T}, Matrix{T}, Vector{T},
             Vector{Int}, Vector{Vector{Tuple{Int,Int}}})))
-    @test 5 >= length(asm_calls(evaluate_gradient!,
+    @test 4 == length(asm_calls(evaluate_gradient!,
         (Matrix{T}, Vector{T}, Matrix{T}, Vector{T},
             RKOCBackpropEvaluator{T})))
 end
