@@ -46,6 +46,7 @@ for T in (Float32, Float64, Float64x2, Float64x4, Float64x8)
     @test 0 == length(asm_calls(approx_norm, (Vector{T},)))
     @test 0 == length(asm_calls(approx_norm2, (Vector{T},)))
     @test 0 == length(asm_calls(approx_normalize!, (Vector{T},)))
+    @test 0 == length(asm_calls(identity_matrix!, (Matrix{T},)))
 end
 
 ################################################################################
@@ -158,8 +159,8 @@ for T in (Float32, Float64, Float64x2, Float64x4, Float64x8)
         (Matrix{T}, Vector{T}, Vector{T}, Int)))
     @test 0 == length(asm_calls(populate_explicit!,
         (Vector{T}, Matrix{T}, Vector{T}, Int)))
-    @test 3 == length(asm_calls(step!,
-        (RKOCBackpropFSGDOptimizer{T}, T, Int)))
+    # @test 3 == length(asm_calls(step!,
+    #     (RKOCBackpropFSGDOptimizer{T}, T, Int)))
 end
 
 println("All tests passed!")

@@ -6,7 +6,7 @@ export RKOCEvaluator, evaluate_residual!, evaluate_jacobian!,
     rk4_table, extrapolated_euler_table, rkck5_table, dopri5_table, rkf8_table,
     RKSolver, runge_kutta_step!,
     RKOCBackpropEvaluator, evaluate_residual2, evaluate_gradient!,
-    populate_explicit!, RKOCBackpropFSGDOptimizer, step!
+    populate_explicit!#, RKOCBackpropFSGDOptimizer, step!
 
 using Base.Threads: @threads, nthreads, threadid
 using LinearAlgebra: mul!, ldiv!, qrfactUnblocked!
@@ -1081,47 +1081,47 @@ end
 
 ################################################################################
 
-struct RKOCBackpropFSGDOptimizer{T <: Real}
-    evaluator::RKOCBackpropEvaluator{T}
-    A::Matrix{T}
-    b::Vector{T}
-    x::Vector{T}
-    gA::Matrix{T}
-    gb::Vector{T}
-    gx::Vector{T}
-end
+# struct RKOCBackpropFSGDOptimizer{T <: Real}
+#     evaluator::RKOCBackpropEvaluator{T}
+#     A::Matrix{T}
+#     b::Vector{T}
+#     x::Vector{T}
+#     gA::Matrix{T}
+#     gb::Vector{T}
+#     gx::Vector{T}
+# end
 
-function RKOCBackpropFSGDOptimizer{T}(order::Int, num_stages::Int,
-        x_init::Vector{S}) where {S <: Real, T <: Real}
-    evaluator = RKOCBackpropEvaluator{T}(order, num_stages)
-    num_vars = div(num_stages * (num_stages + 1), 2)
-    @assert length(x_init) == num_vars
-    RKOCBackpropFSGDOptimizer{T}(evaluator,
-        Matrix{T}(undef, num_stages, num_stages),
-        Vector{T}(undef, num_stages),
-        T.(x_init),
-        Matrix{T}(undef, num_stages, num_stages),
-        Vector{T}(undef, num_stages),
-        Vector{T}(undef, num_vars))
-end
+# function RKOCBackpropFSGDOptimizer{T}(order::Int, num_stages::Int,
+#         x_init::Vector{S}) where {S <: Real, T <: Real}
+#     evaluator = RKOCBackpropEvaluator{T}(order, num_stages)
+#     num_vars = div(num_stages * (num_stages + 1), 2)
+#     @assert length(x_init) == num_vars
+#     RKOCBackpropFSGDOptimizer{T}(evaluator,
+#         Matrix{T}(undef, num_stages, num_stages),
+#         Vector{T}(undef, num_stages),
+#         T.(x_init),
+#         Matrix{T}(undef, num_stages, num_stages),
+#         Vector{T}(undef, num_stages),
+#         Vector{T}(undef, num_vars))
+# end
 
-function step!(optimizer::RKOCBackpropFSGDOptimizer{T},
-        step_size::T, num_steps::Int) where {T <: Real}
-    evaluator = optimizer.evaluator
-    num_stages = evaluator.num_stages
-    num_vars = div(num_stages * (num_stages + 1), 2)
-    A, b, x = optimizer.A, optimizer.b, optimizer.x
-    gA, gb, gx = optimizer.gA, optimizer.gb, optimizer.gx
-    for _ = 1 : num_steps
-        populate_explicit!(A, b, x, num_stages)
-        evaluate_gradient!(gA, gb, A, b, evaluator)
-        populate_explicit!(gx, gA, gb, num_stages)
-        normalize!(gx)
-        @simd ivdep for i = 1 : num_vars
-            @inbounds x[i] -= step_size * gx[i]
-        end
-    end
-    evaluate_residual2(A, b, evaluator)
-end
+# function step!(optimizer::RKOCBackpropFSGDOptimizer{T},
+#         step_size::T, num_steps::Int) where {T <: Real}
+#     evaluator = optimizer.evaluator
+#     num_stages = evaluator.num_stages
+#     num_vars = div(num_stages * (num_stages + 1), 2)
+#     A, b, x = optimizer.A, optimizer.b, optimizer.x
+#     gA, gb, gx = optimizer.gA, optimizer.gb, optimizer.gx
+#     for _ = 1 : num_steps
+#         populate_explicit!(A, b, x, num_stages)
+#         evaluate_gradient!(gA, gb, A, b, evaluator)
+#         populate_explicit!(gx, gA, gb, num_stages)
+#         normalize!(gx)
+#         @simd ivdep for i = 1 : num_vars
+#             @inbounds x[i] -= step_size * gx[i]
+#         end
+#     end
+#     evaluate_residual2(A, b, evaluator)
+# end
 
 end # module RKTK2
