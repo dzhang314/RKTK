@@ -164,4 +164,13 @@ for T in (Float32, Float64, Float64x2, Float64x4, Float64x8)
     #     (RKOCBackpropFSGDOptimizer{T}, T, Int)))
 end
 
+################################################################################
+
+using DZOptimization: update_inverse_hessian!
+
+for T in (Float32, Float64, Float64x2, Float64x4, Float64x8)
+    @test 1 == length(asm_calls(update_inverse_hessian!,
+        (Matrix{T}, T, Vector{T}, Vector{T}, Vector{T})))
+end
+
 println("All tests passed!")

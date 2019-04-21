@@ -5,7 +5,6 @@ export rmk, say, dbl, scale, integer_partitions,
     orthonormalize_columns!, linearly_independent_column_indices!,
     norm, norm2, normalize!, approx_norm, approx_norm2, approx_normalize!,
     dot, identity_matrix!,
-    quadratic_line_search, quadratic_search,
     asm_lines, asm_calls, view_asm
 
 using InteractiveUtils: _dump_function
@@ -125,7 +124,7 @@ end
 
 function combinations_with_replacement(
         items::Vector{T}, n::Int)::Vector{Vector{Pair{T,Int}}} where {T}
-        combinations = Vector{Pair{T,Int}}[]
+    combinations = Vector{Pair{T,Int}}[]
     for p in integer_partitions(n, length(items))
         while true
             comb = Pair{T,Int}[]
@@ -295,7 +294,7 @@ end
 
 ################################################################################
 
-@inline function dot(v::Vector{T}, w::Vector{T}) where {T <: Real}
+@inline function dot(v::Vector{T}, w::Vector{T})::T where {T <: Real}
     result = zero(T)
     @simd ivdep for i = 1 : length(v)
         @inbounds result += v[i] * w[i]
@@ -303,90 +302,13 @@ end
     result
 end
 
-@inline function identity_matrix!(A::Matrix{T}) where {T <: Number}
+@inline function identity_matrix!(A::Matrix{T})::Nothing where {T <: Number}
     m, n = size(A, 1), size(A, 2)
     for j = 1 : n
         @simd ivdep for i = 1 : m
             @inbounds A[i,j] = T(i == j)
         end
     end
-end
-
-################################################################################
-
-function _qls_best(fb, x1, f1, x2, f2, x3, f3)
-    xb = zero(x1)
-    if f1 < fb
-        xb, fb = x1, f1
-    end
-    if f2 < fb
-        xb, fb = x2, f2
-    end
-    if f3 < fb
-        xb, fb = x3, f3
-    end
-    xb, fb
-end
-
-function _qls_minimum_high(f0, f1, f2)
-    q1 = f1 + f1
-    q2 = q1 + q1
-    q3 = f0 + f0
-    q4 = f2 + f0
-    q5 = q1 - q4
-    (q2 - q3 - q4) / (q5 + q5)
-end
-
-function _qls_minimum_low(f0, f1, f2)
-    q1 = f2 + f2
-    q2 = q1 + q1
-    q3 = f0 + f0
-    q4 = f0 + f1
-    q5 = q4 - q1
-    q6 = q5 + q5
-    (q4 + q3 - q2) / (q6 + q6)
-end
-
-function quadratic_line_search(f, f0, x1, args...)
-    if isnan(f0)
-        return zero(x1), f0
-    end
-    f1 = f(x1, args...)
-    if isnan(f1)
-        return quadratic_line_search(f, f0, scale(0.5, x1), args...)
-    end
-    if f1 < f0
-        while true
-            x2 = scale(2.0, x1)
-            f2 = f(x2, args...)
-            if (f2 >= f1) || isnan(f2)
-                x3 = x1 * _qls_minimum_high(f0, f1, f2)
-                f3 = f(x3, args...)
-                return _qls_best(f0, x1, f1, x2, f2, x3, f3)
-            else
-                x1, f1 = x2, f2
-            end
-        end
-    else
-        while true
-            x2 = scale(0.5, x1)
-            f2 = f(x2, args...)
-            if isnan(f2)
-                return zero(x1), f0
-            end
-            if f2 <= f0
-                x3 = x1 * _qls_minimum_low(f0, f1, f2)
-                f3 = f(x3, args...)
-                return _qls_best(f0, x2, f2, x1, f1, x3, f3)
-            else
-                x1, f1 = x2, f2
-            end
-        end
-    end
-end
-
-function quadratic_search(f, x1, args...)
-    quadratic_line_search(f, f(zero(x1), args...), x1, args...)
 end
 
 ################################################################################
@@ -444,7 +366,7 @@ const JUMP_SYMBOLS = Dict("je" => " == ", "jne" => " != ",
                           "jg" => " > ", "jge" => " >= ",
                           "jl" => " < ", "jle" => " <= ")
 const SHUFFLE_INSTRUCTIONS = ["vunpcklpd", "vunpckhpd", "vperm2f128",
-    "vblendpd", "vshufpd"]
+    "vblendpd", "vshufpd", "vpermpd", "vpermilpd"]
 
 function view_asm(@nospecialize(func), @nospecialize(types))
 
