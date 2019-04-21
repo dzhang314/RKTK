@@ -113,6 +113,7 @@ end
 
 struct BFGSOptimizer{S1, S2, T <: Real}
     num_dims::Int
+    iteration::Vector{Int}
     objective_functor::S1
     gradient_functor!::S2
     current_point::Vector{T}
@@ -138,7 +139,8 @@ function BFGSOptimizer(initial_point::Vector{T}, initial_step_size::T,
     bfgs_dir = copy(gradient)
     hess_inv = Matrix{T}(undef, num_dims, num_dims)
     identity_matrix!(hess_inv)
-    BFGSOptimizer{S1,S2,T}(num_dims, objective_functor, gradient_functor!,
+    BFGSOptimizer{S1,S2,T}(num_dims, Int[0],
+        objective_functor, gradient_functor!,
         current_point, temp_buffer, T[objective], gradient,
         T[initial_step_size], Vector{T}(undef, num_dims),
         bfgs_dir, hess_inv,
@@ -149,6 +151,7 @@ function BFGSOptimizer(initial_point::Vector{T}, initial_step_size::T,
 end
 
 function step!(opt::BFGSOptimizer{S1,S2,T}) where {S1, S2, T <: Real}
+    @inbounds opt.iteration[1] += 1
     @inbounds step_size, objective = opt.last_step_size[1], opt.objective[1]
     grad_dir, bfgs_dir = opt.gradient, opt.bfgs_dir
     delta_grad, hess_inv = opt.delta_gradient, opt.hess_inv

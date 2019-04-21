@@ -35,20 +35,32 @@ end
 
 
 function print_table_header()
-    say("  Objective value  │   Gradient norm   │",
-        "  Last step size   │    Point norm     │ Type")
-    say("───────────────────┼───────────────────┼",
-        "───────────────────┼───────────────────┼──────")
+    say(" Iteration │  Objective value  │   Gradient norm   │",
+                    "  Last step size   │    Point norm     │ Type")
+    say("───────────┼───────────────────┼───────────────────┼",
+                    "───────────────────┼───────────────────┼──────")
 end
 
-function print_table_row(obj_value, grad_norm, step_size, point_norm, type)
-    say(" ", numstr(obj_value), "│ ", numstr(grad_norm),  "│ ",
-             numstr(step_size), "│ ", numstr(point_norm), "│ ", type)
+function print_table_row(iter, obj_value, grad_norm, step_size, point_norm, type)
+    say(" ", lpad(string(iter), 9, ' '), " | ",
+        numstr(obj_value), "│ ", numstr(grad_norm),  "│ ",
+        numstr(step_size), "│ ", numstr(point_norm), "│ ", type)
+end
+
+function rmk_table_row(iter, obj_value, grad_norm, step_size, point_norm, type)
+    rmk(" ", lpad(string(iter), 9, ' '), " | ",
+        numstr(obj_value), "│ ", numstr(grad_norm),  "│ ",
+        numstr(step_size), "│ ", numstr(point_norm), "│ ", type)
 end
 
 function print_table_row(opt, type)
-    print_table_row(opt.objective[1], norm(opt.gradient),
+    print_table_row(opt.iteration[1], opt.objective[1], norm(opt.gradient),
                     opt.last_step_size[1], norm(opt.current_point), type)
+end
+
+function rmk_table_row(opt, type)
+    rmk_table_row(opt.iteration[1], opt.objective[1], norm(opt.gradient),
+                  opt.last_step_size[1], norm(opt.current_point), type)
 end
 
 ################################################################################
@@ -65,11 +77,15 @@ function search(::Type{T}, order::Int, num_stages::Int) where {T <: Real}
         if !objective_decreased
             print_table_row(optimizer, "DONE")
             break
-        end
-        current_time = time_ns()
-        if (current_time - last_print_time > 0xBEBC200) || !bfgs_used
-            print_table_row(optimizer, bfgs_used ? "BFGS" : "GRAD")
-            last_print_time = current_time
+        elseif !bfgs_used
+            print_table_row(optimizer, "GRAD")
+            last_print_time = time_ns()
+        else
+            current_time = time_ns()
+            if current_time - last_print_time > 0xBEBC200
+                print_table_row(optimizer, "BFGS")
+                last_print_time = current_time
+            end
         end
     end
 end
