@@ -6,7 +6,7 @@ export RKOCEvaluator, evaluate_residual!, evaluate_jacobian!,
     rk4_table, extrapolated_euler_table, rkck5_table, dopri5_table, rkf8_table,
     RKSolver, runge_kutta_step!,
     RKOCBackpropEvaluator, evaluate_residual2, evaluate_gradient!,
-    populate_explicit!#, RKOCBackpropFSGDOptimizer, step!
+    populate_explicit!, rkoc_explicit_backprop_functors
 
 using Base.Threads: @threads, nthreads, threadid
 using LinearAlgebra: mul!, ldiv!, qrfactUnblocked!
@@ -393,7 +393,7 @@ end
 @inline function dot_inplace(n::Int,
         v::Vector{T}, v_offset::Int,
         w::Vector{T}, w_offset::Int)::T where {T <: Real}
-    @inbounds result = zero(T)
+    result = zero(T)
     @simd for i = 1 : n
         @inbounds result += v[v_offset + i] * w[w_offset + i]
     end
@@ -1000,13 +1000,13 @@ function RKOCBackpropEvaluator{T}(order::Int, num_stages::Int) where {T <: Real}
 end
 
 function evaluate_residual2(A::Matrix{T}, b::Vector{T},
-        evaluator::RKOCBackpropEvaluator{T}) where {T <: Real}
+        evaluator::RKOCBackpropEvaluator{T})::T where {T <: Real}
     num_constrs, inv_density = evaluator.num_constrs, evaluator.inv_density
     m, q = evaluator.m, evaluator.q
     compute_butcher_weights!(m, A, evaluator.dependencies)
     mul!(q, transpose(m), b)
     residual = zero(T)
-    @inbounds @simd ivdep for j = 1 : num_constrs
+    @inbounds @simd for j = 1 : num_constrs
         x = q[j] - inv_density[j]
         residual += x * x
     end
@@ -1014,14 +1014,14 @@ function evaluate_residual2(A::Matrix{T}, b::Vector{T},
 end
 
 function evaluate_gradient!(gA::Matrix{T}, gb::Vector{T}, A::Matrix{T},
-        b::Vector{T}, evaluator::RKOCBackpropEvaluator{T}) where {T <: Real}
+        b::Vector{T}, evaluator::RKOCBackpropEvaluator{T})::T where {T <: Real}
     num_stages, num_constrs = evaluator.num_stages, evaluator.num_constrs
     inv_density, children = evaluator.inv_density, evaluator.children
     m, u, p, q = evaluator.m, evaluator.u, evaluator.p, evaluator.q
     compute_butcher_weights!(m, A, evaluator.dependencies)
     mul!(q, transpose(m), b)
     residual = zero(T)
-    @inbounds @simd ivdep for j = 1 : num_constrs
+    @inbounds @simd for j = 1 : num_constrs
         x = q[j] - inv_density[j]
         residual += x * x
         p[j] = dbl(x)
@@ -1049,7 +1049,7 @@ end
 ################################################################################
 
 function populate_explicit!(A::Matrix{T}, b::Vector{T}, x::Vector{T},
-        n::Int) where {T <: Number}
+        n::Int)::Nothing where {T <: Number}
     k = 0
     for i = 1 : n
         @simd ivdep for j = 1 : i - 1
@@ -1066,7 +1066,7 @@ function populate_explicit!(A::Matrix{T}, b::Vector{T}, x::Vector{T},
 end
 
 function populate_explicit!(x::Vector{T}, A::Matrix{T}, b::Vector{T},
-        n::Int) where {T <: Number}
+        n::Int)::Nothing where {T <: Number}
     k = 0
     for i = 2 : n
         @simd ivdep for j = 1 : i - 1
@@ -1081,47 +1081,45 @@ end
 
 ################################################################################
 
-# struct RKOCBackpropFSGDOptimizer{T <: Real}
-#     evaluator::RKOCBackpropEvaluator{T}
-#     A::Matrix{T}
-#     b::Vector{T}
-#     x::Vector{T}
-#     gA::Matrix{T}
-#     gb::Vector{T}
-#     gx::Vector{T}
-# end
+struct RKOCExplicitBackpropObjectiveFunctor{T <: Real}
+    evaluator::RKOCBackpropEvaluator{T}
+    A::Matrix{T}
+    b::Vector{T}
+end
 
-# function RKOCBackpropFSGDOptimizer{T}(order::Int, num_stages::Int,
-#         x_init::Vector{S}) where {S <: Real, T <: Real}
-#     evaluator = RKOCBackpropEvaluator{T}(order, num_stages)
-#     num_vars = div(num_stages * (num_stages + 1), 2)
-#     @assert length(x_init) == num_vars
-#     RKOCBackpropFSGDOptimizer{T}(evaluator,
-#         Matrix{T}(undef, num_stages, num_stages),
-#         Vector{T}(undef, num_stages),
-#         T.(x_init),
-#         Matrix{T}(undef, num_stages, num_stages),
-#         Vector{T}(undef, num_stages),
-#         Vector{T}(undef, num_vars))
-# end
+struct RKOCExplicitBackpropGradientFunctor{T <: Real}
+    evaluator::RKOCBackpropEvaluator{T}
+    A::Matrix{T}
+    b::Vector{T}
+    gA::Matrix{T}
+    gb::Vector{T}
+end
 
-# function step!(optimizer::RKOCBackpropFSGDOptimizer{T},
-#         step_size::T, num_steps::Int) where {T <: Real}
-#     evaluator = optimizer.evaluator
-#     num_stages = evaluator.num_stages
-#     num_vars = div(num_stages * (num_stages + 1), 2)
-#     A, b, x = optimizer.A, optimizer.b, optimizer.x
-#     gA, gb, gx = optimizer.gA, optimizer.gb, optimizer.gx
-#     for _ = 1 : num_steps
-#         populate_explicit!(A, b, x, num_stages)
-#         evaluate_gradient!(gA, gb, A, b, evaluator)
-#         populate_explicit!(gx, gA, gb, num_stages)
-#         normalize!(gx)
-#         @simd ivdep for i = 1 : num_vars
-#             @inbounds x[i] -= step_size * gx[i]
-#         end
-#     end
-#     evaluate_residual2(A, b, evaluator)
-# end
+function (of::RKOCExplicitBackpropObjectiveFunctor{T})(
+        x::Vector{T})::T where {T <: Real}
+    A, b, evaluator = of.A, of.b, of.evaluator
+    populate_explicit!(A, b, x, evaluator.num_stages)
+    evaluate_residual2(A, b, evaluator)
+end
+
+function (gf::RKOCExplicitBackpropGradientFunctor{T})(
+        gx::Vector{T}, x::Vector{T})::T where {T <: Real}
+    A, b, gA, gb, evaluator = gf.A, gf.b, gf.gA, gf.gb, gf.evaluator
+    populate_explicit!(A, b, x, evaluator.num_stages)
+    result = evaluate_gradient!(gA, gb, A, b, evaluator)
+    populate_explicit!(gx, gA, gb, evaluator.num_stages)
+    result
+end
+
+function rkoc_explicit_backprop_functors(::Type{T}, order::Int,
+                                         num_stages::Int) where {T <: Real}
+    evaluator = RKOCBackpropEvaluator{T}(order, num_stages)
+    A = Matrix{T}(undef, num_stages, num_stages)
+    b = Vector{T}(undef, num_stages)
+    gA = Matrix{T}(undef, num_stages, num_stages)
+    gb = Vector{T}(undef, num_stages)
+    RKOCExplicitBackpropObjectiveFunctor{T}(evaluator, A, b),
+        RKOCExplicitBackpropGradientFunctor{T}(evaluator, A, b, gA, gb)
+end
 
 end # module RKTK2
