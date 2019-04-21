@@ -441,6 +441,8 @@ const JUMP_SYMBOLS = Dict("je" => " == ", "jne" => " != ",
                           "jb" => " < ", "jbe" => " <= ",
                           "jg" => " > ", "jge" => " >= ",
                           "jl" => " < ", "jle" => " <= ")
+const SHUFFLE_INSTRUCTIONS = ["vunpcklpd", "vunpckhpd", "vperm2f128",
+    "vblendpd", "vshufpd"]
 
 function view_asm(@nospecialize(func), @nospecialize(types))
 
@@ -553,16 +555,31 @@ function view_asm(@nospecialize(func), @nospecialize(types))
             end
         elseif line[1] == "shl" || line[1] == "sal"
             line = split(join(line[2:end], ' '), ", ")
-            @assert length(line) == 2
-            say("    ", line[1], " <<= ", line[2], ';')
+            if length(line) == 1
+                say("    ", line[1], " <<= 1;")
+            elseif length(line) == 2
+                say("    ", line[1], " <<= ", line[2], ';')
+            else
+                @assert false
+            end
         elseif line[1] == "shr"
             line = split(join(line[2:end], ' '), ", ")
-            @assert length(line) == 2
-            say("    ", line[1], " >>>= ", line[2], ';')
+            if length(line) == 1
+                say("    ", line[1], " >>>= 1;")
+            elseif length(line) == 2
+                say("    ", line[1], " >>>= ", line[2], ';')
+            else
+                @assert false
+            end
         elseif line[1] == "sar"
             line = split(join(line[2:end], ' '), ", ")
-            @assert length(line) == 2
-            say("    ", line[1], " >>= ", line[2], ';')
+            if length(line) == 1
+                say("    ", line[1], " >>= 1;")
+            elseif length(line) == 2
+                say("    ", line[1], " >>= ", line[2], ';')
+            else
+                @assert false
+            end
         elseif line[1] == "andn"
             line = split(join(line[2:end], ' '), ", ")
             @assert length(line) == 3
@@ -612,7 +629,7 @@ function view_asm(@nospecialize(func), @nospecialize(types))
             else
                 say("    ", line[1], " = ", line[2], " / ", line[3], ';')
             end
-        elseif line[1] in ["vunpcklpd", "vunpckhpd", "vperm2f128", "vblendpd"]
+        elseif line[1] in SHUFFLE_INSTRUCTIONS
             line = split(join(line[2:end], ' '), " # ")
             @assert length(line) == 2
             say("    ", replace(line[2], "]," => "], "), ';')
