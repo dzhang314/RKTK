@@ -22,18 +22,56 @@ using RKTK2
 
 ################################################################################
 
+struct RKTKID
+    order::Int
+    num_stages::Int
+    uuid::UUID
+end
+
+const RKTKID_REGEX = Regex(
+    "RKTK-([0-9]{2})([0-9]{2})-([0-9A-Fa-f]{8}-" *
+    "[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12})")
+const RKTK_FILENAME_REGEX = Regex(
+    "^[0-9]{4}-[0-9]{4}-RKTK-([0-9]{2})([0-9]{2})-([0-9A-Fa-f]{8}-" *
+    "[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12})\\.txt\$")
+
+function find_rktkid(str)
+    m = match(RKTKID_REGEX, str)
+    if m != nothing
+        RKTKID(parse(Int, m[1]), parse(Int, m[2]), UUID(m[3]))
+    else
+        nothing
+    end
+end
+
+################################################################################
+
 numstr(x) = @sprintf("%#-18.12g", BigFloat(x))
 shortstr(x) = @sprintf("%#.5g", BigFloat(x))
-score_str(x) = lpad(string(clamp(round(Int,
-    -100 * log10(BigFloat(x))), 0, 9999)), 4, '0')
-rktk_filename(opt, id) = score_str(opt.objective[1]) * '-' *
-    score_str(norm(opt.gradient)) * "-RKTK-" * uppercase(string(id)) * '-' *
-    lpad(string(opt.iteration[1]), 10, '0') * ".txt"
+log_score(x) = round(Int, -100 * log10(BigFloat(x)))
+score_str(x) = lpad(clamp(log_score(x), 0, 9999), 4, '0')
+rktk_filename(opt, id::RKTKID) = score_str(opt.objective[1]) * '-' *
+    score_str(norm(opt.gradient)) * "-RKTK-" *
+    lpad(id.order, 2, '0') * lpad(id.num_stages, 2, '0') * '-' *
+    uppercase(string(id.uuid)) * ".txt"
+
+function round_precision(prec)
+    if     prec <= 32;  32  # Float32
+    elseif prec <= 64;  64  # Float64
+    elseif prec <= 128; 128 # Float64x2
+    elseif prec <= 192; 192 # Float64x3
+    elseif prec <= 256; 256 # Float64x4
+    elseif prec <= 320; 320 # Float64x5
+    elseif prec <= 384; 384 # Float64x6
+    elseif prec <= 448; 448 # Float64x7
+    elseif prec <= 512; 512 # Float64x8
+    else;  prec             # BigFloat
+end end
 
 function print_help()
-    say("Usage: julia RKTK.jl <mode> [parameters...]")
+    say("Usage: julia RKTK.jl <command> [parameters...]")
     say()
-    say("RKTK provides the following <mode> options:")
+    say("RKTK provides the following <command> options:")
     say("    search <order> <num-stages> <precision>")
     say()
 end
@@ -47,14 +85,14 @@ end
 
 function print_table_row(iter, obj_value, grad_norm,
                          step_size, point_norm, type)
-    say(" ", lpad(string(iter), 9, ' '), " | ",
+    say(" ", lpad(iter, 9, ' '), " | ",
         numstr(obj_value), "│ ", numstr(grad_norm),  "│ ",
         numstr(step_size), "│ ", numstr(point_norm), "│ ", type)
 end
 
 function rmk_table_row(iter, obj_value, grad_norm,
                        step_size, point_norm, type)
-    rmk(" ", lpad(string(iter), 9, ' '), " | ",
+    rmk(" ", lpad(iter, 9, ' '), " | ",
         numstr(obj_value), "│ ", numstr(grad_norm),  "│ ",
         numstr(step_size), "│ ", numstr(point_norm), "│ ", type)
 end
@@ -80,48 +118,69 @@ end
 
 ################################################################################
 
-function save_to_file(opt, id)
-    name = rktk_filename(opt, id)
-    rmk("Saving progress to file ", name, "...")
-    file = open(rktk_filename(opt, id), "w")
-    for x in opt.current_point
-        write(file, string(BigFloat(x)), '\n')
+function find_filename_by_id(id::RKTKID)
+    for filename in readdir()
+        if (m = match(RKTK_FILENAME_REGEX, filename)) != nothing
+            if ((parse(Int, m[1]) == id.order) &&
+                    (parse(Int, m[2]) == id.num_stages) &&
+                    (UUID(m[3]) == id.uuid))
+                return filename
+            end
+        end
     end
+    return nothing
+end
+
+function save_to_file(opt, id::RKTKID)
+    filename = rktk_filename(opt, id)
+    rmk("Saving progress to file ", filename, "...")
+    old_filename = find_filename_by_id(id)
+    if old_filename != nothing; mv(old_filename, filename); end
+    file = open(filename, "a+")
+    println(file, opt.iteration[1], ' ', precision(BigFloat), ' ',
+            log_score(opt.objective[1]), ' ', log_score(norm(opt.gradient)))
+    for x in opt.current_point
+        println(file, BigFloat(x))
+    end
+    println(file)
     close(file)
     rmk("Save complete.")
 end
 
-function search(::Type{T}, order::Int, num_stages::Int) where {T <: Real}
+function run!(opt, id::RKTKID)
+    print_table_header()
+    print_table_row(opt, "NONE")
+    save_to_file(opt, id)
+    last_print_time = last_save_time = time_ns()
     while true
-        id = uuid4()
-        say("Running ", T, " search RKTK-", uppercase(string(id)), ".\n")
-        print_table_header()
-        optimizer = rkoc_optimizer(T, order, num_stages)
-        print_table_row(optimizer, "NONE")
-        # save_to_file(optimizer, id)
-        last_print_time = last_save_time = time_ns()
-        while true
-            bfgs_used, objective_decreased = step!(optimizer)
-            if !objective_decreased
-                print_table_row(optimizer, "DONE")
-                save_to_file(optimizer, id)
-                say("\nCompleted search RKTK-", uppercase(string(id)), ".\n")
-                break
-            end
-            current_time = time_ns()
-            if current_time - last_save_time > UInt(60_000_000_000)
-                save_to_file(optimizer, id)
-                last_save_time = current_time
-            end
-            if !bfgs_used
-                print_table_row(optimizer, "GRAD")
-                last_print_time = current_time
-            elseif current_time - last_print_time > UInt(80_000_000)
-                rmk_table_row(optimizer, "BFGS")
-                last_print_time = current_time
-            end
+        bfgs_used, objective_decreased = step!(opt)
+        if !objective_decreased
+            print_table_row(opt, "DONE")
+            save_to_file(opt, id)
+            return
+        end
+        current_time = time_ns()
+        if current_time - last_save_time > UInt(60_000_000_000)
+            save_to_file(opt, id)
+            last_save_time = current_time
+        end
+        if !bfgs_used
+            print_table_row(opt, "GRAD")
+            last_print_time = current_time
+        elseif current_time - last_print_time > UInt(80_000_000)
+            rmk_table_row(opt, "BFGS")
+            last_print_time = current_time
         end
     end
+end
+
+function search(::Type{T}, id::RKTKID) where {T <: Real}
+    optimizer = rkoc_optimizer(T, id.order, id.num_stages)
+    say("Running ", T, " search RKTK-",
+        lpad(order, 2, '0'), lpad(num_stages, 2, '0'),
+        uppercase(string(id.uuid)), ".\n")
+    run!(optimizer, id)
+    say("\nCompleted search RKTK-", uppercase(string(id.uuid)), ".\n")
 end
 
 ################################################################################
@@ -131,20 +190,37 @@ if (length(ARGS) == 0) || ("-h" in ARGS) || ("--help" in ARGS)
 elseif uppercase(ARGS[1]) == "SEARCH"
     order = parse(Int, ARGS[2])
     num_stages = parse(Int, ARGS[3])
-    prec = parse(Int, ARGS[4])
+    prec = round_precision(parse(Int, ARGS[4]))
     setprecision(prec)
-    if     prec == 32;  search(Float32,   order, num_stages)
-    elseif prec == 64;  search(Float64,   order, num_stages)
-    elseif prec == 128; search(Float64x2, order, num_stages)
-    elseif prec == 192; search(Float64x3, order, num_stages)
-    elseif prec == 256; search(Float64x4, order, num_stages)
-    elseif prec == 320; search(Float64x5, order, num_stages)
-    elseif prec == 384; search(Float64x6, order, num_stages)
-    elseif prec == 448; search(Float64x7, order, num_stages)
-    elseif prec == 512; search(Float64x8, order, num_stages)
-    else;               search(BigFloat,  order, num_stages)
+    if     prec == 32;  search(Float32,   RKTKID(order, num_stages, uuid4()))
+    elseif prec == 64;  search(Float64,   RKTKID(order, num_stages, uuid4()))
+    elseif prec == 128; search(Float64x2, RKTKID(order, num_stages, uuid4()))
+    elseif prec == 192; search(Float64x3, RKTKID(order, num_stages, uuid4()))
+    elseif prec == 256; search(Float64x4, RKTKID(order, num_stages, uuid4()))
+    elseif prec == 320; search(Float64x5, RKTKID(order, num_stages, uuid4()))
+    elseif prec == 384; search(Float64x6, RKTKID(order, num_stages, uuid4()))
+    elseif prec == 448; search(Float64x7, RKTKID(order, num_stages, uuid4()))
+    elseif prec == 512; search(Float64x8, RKTKID(order, num_stages, uuid4()))
+    else;               search(BigFloat,  RKTKID(order, num_stages, uuid4()))
     end
+elseif uppercase(ARGS[1]) == "REFINE"
+    id = find_rktkid(ARGS[2])
+    if id == nothing
+        say("ERROR: Invalid RKTK ID ", ARGS[2], ".")
+        say("RKTK IDs have the form ",
+            "RKTK-XXYY-ZZZZZZZZ-ZZZZ-ZZZZ-ZZZZ-ZZZZZZZZZZZZ.\n")
+        exit(-1)
+    end
+    filename = find_filename_by_id(id)
+    if filename == nothing
+        say("ERROR: No file exists with RKTK ID ", id, ".\n")
+        exit(-1)
+    end
+    trajectory = strip.(split(read(filename, String), "\n\n"))
+    filter!(!isempty, trajectory)
+    println(split(trajectory[end], '\n'))
 else
+    say("ERROR: Unrecognized <command> option ", ARGS[1], ".\n")
     print_help()
 end
 
