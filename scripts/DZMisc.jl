@@ -4,11 +4,11 @@ export rmk, say, dbl, scale, integer_partitions,
     RootedTree, rooted_trees, rooted_tree_count, butcher_density,
     orthonormalize_columns!, linearly_independent_column_indices!,
     norm, norm2, normalize!, approx_norm, approx_norm2, approx_normalize!,
-    quadratic_line_search, quadratic_search, update_inverse_hessian!,
+    dot, identity_matrix!,
+    quadratic_line_search, quadratic_search,
     asm_lines, asm_calls, view_asm
 
 using InteractiveUtils: _dump_function
-using LinearAlgebra: dot, mul!
 
 ################################################################################
 
@@ -295,6 +295,25 @@ end
 
 ################################################################################
 
+@inline function dot(v::Vector{T}, w::Vector{T}) where {T <: Real}
+    result = zero(T)
+    @simd ivdep for i = 1 : length(v)
+        @inbounds result += v[i] * w[i]
+    end
+    result
+end
+
+@inline function identity_matrix!(A::Matrix{T}) where {T <: Number}
+    m, n = size(A, 1), size(A, 2)
+    for j = 1 : n
+        @simd ivdep for i = 1 : m
+            @inbounds A[i,j] = T(i == j)
+        end
+    end
+end
+
+################################################################################
+
 function _qls_best(fb, x1, f1, x2, f2, x3, f3)
     xb = zero(x1)
     if f1 < fb
@@ -368,23 +387,6 @@ end
 
 function quadratic_search(f, x1, args...)
     quadratic_line_search(f, f(zero(x1), args...), x1, args...)
-end
-
-################################################################################
-
-function update_inverse_hessian!(B_inv::Matrix{T}, h::T,
-        s::Vector{T}, y::Vector{T}, t::Vector{T})::Nothing where {T <: Real}
-    b = dot(s, y)
-    s .*= inv(b)
-    mul!(t, B_inv, y)
-    a = h * b + dot(y, t)
-    for j = 1 : size(B_inv, 2)
-        sj = s[j]
-        tj = t[j]
-        @simd ivdep for i = 1 : size(B_inv, 1)
-            @inbounds B_inv[i, j] += a * (s[i] * sj) - (t[i] * sj + s[i] * tj)
-        end
-    end
 end
 
 ################################################################################

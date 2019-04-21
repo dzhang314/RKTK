@@ -3,7 +3,7 @@ module DZOptimization
 export BFGSOptimizer, step!
 
 using LinearAlgebra: mul!
-using DZMisc: norm, quadratic_line_search, update_inverse_hessian!
+using DZMisc: norm, dot, quadratic_line_search, identity_matrix!
 
 struct BFGSOptimizer{T <: Real}
     n::Int
@@ -41,14 +41,6 @@ function BFGSOptimizer(vec::Vector{T}, step_size,
         last_step_size, delta_gradient, bfgs_dir, hess_inv)
 end
 
-function reset_hessian!(opt::BFGSOptimizer{T}) where {T <: Real}
-    for j = 1 : opt.n
-        @simd ivdep for i = 1 : opt.n
-            @inbounds opt.hess_inv[i, j] = T(i == j)
-        end
-    end
-end
-
 function step_obj(step_size::T, step_dir::Vector{T},
         opt::BFGSOptimizer{T}, f, args...) where {T <: Real}
     @simd ivdep for i = 1 : opt.n
@@ -57,44 +49,60 @@ function step_obj(step_size::T, step_dir::Vector{T},
     f(opt.temp, args...)
 end
 
+function update_inverse_hessian!(B_inv::Matrix{T}, h::T,
+        s::Vector{T}, y::Vector{T}, t::Vector{T})::Nothing where {T <: Real}
+    b = dot(s, y)
+    s .*= inv(b)
+    mul!(t, B_inv, y)
+    a = h * b + dot(y, t)
+    for j = 1 : size(B_inv, 2)
+        sj = s[j]
+        tj = t[j]
+        @simd ivdep for i = 1 : size(B_inv, 1)
+            @inbounds B_inv[i, j] += a * (s[i] * sj) - (t[i] * sj + s[i] * tj)
+        end
+    end
+end
+
 function step!(opt::BFGSOptimizer{T}, f, g!, args...) where {T <: Real}
-    step_size = opt.last_step_size[]
-    objective = opt.objective[]
-    grad_norm = norm(opt.gradient)
-    bfgs_norm = norm(opt.bfgs_dir)
+    step_size, objective = opt.last_step_size[], opt.objective[]
+    grad_dir, bfgs_dir = opt.gradient, opt.bfgs_dir
+    grad_norm, bfgs_norm = norm(grad_dir), norm(bfgs_dir)
+    delta_grad, hess_inv = opt.delta_gradient, opt.hess_inv
+    x, n = opt.x, opt.n
     grad_step_size, grad_obj = quadratic_line_search(step_obj,
-        objective, step_size / grad_norm, opt.gradient, opt, f, args...)
+        objective, step_size / grad_norm, grad_dir, opt, f, args...)
     bfgs_step_size, bfgs_obj = quadratic_line_search(step_obj,
-        objective, step_size / bfgs_norm, opt.bfgs_dir, opt, f, args...)
+        objective, step_size / bfgs_norm, bfgs_dir, opt, f, args...)
     if bfgs_obj <= grad_obj
         opt.objective[] = bfgs_obj
         objective_decreased = (bfgs_obj < objective)
         opt.last_step_size[] = bfgs_step_size * bfgs_norm
-        @simd ivdep for i = 1 : opt.n
-            @inbounds opt.x[i] -= bfgs_step_size * opt.bfgs_dir[i]
+        @simd ivdep for i = 1 : n
+            @inbounds x[i] -= bfgs_step_size * bfgs_dir[i]
         end
-        @simd ivdep for i = 1 : opt.n
-            @inbounds opt.delta_gradient[i] = -opt.gradient[i]
+        @simd ivdep for i = 1 : n
+            @inbounds delta_grad[i] = -grad_dir[i]
         end
-        g!(opt.gradient, opt.x, args...)
-        @simd ivdep for i = 1 : opt.n
-            @inbounds opt.delta_gradient[i] += opt.gradient[i]
+        g!(grad_dir, x, args...)
+        @simd ivdep for i = 1 : n
+            @inbounds delta_grad[i] += grad_dir[i]
         end
-        update_inverse_hessian!(opt.hess_inv, -bfgs_step_size, opt.bfgs_dir,
-            opt.delta_gradient, opt.temp)
-        mul!(opt.bfgs_dir, opt.hess_inv, opt.gradient)
+        update_inverse_hessian!(hess_inv, -bfgs_step_size, bfgs_dir,
+            delta_grad, opt.temp)
+        mul!(bfgs_dir, hess_inv, grad_dir)
         return true, objective_decreased
     else
         opt.objective[] = grad_obj
         objective_decreased = (grad_obj < objective)
         opt.last_step_size[] = grad_step_size * grad_norm
-        @simd ivdep for i = 1 : opt.n
-            @inbounds opt.x[i] -= grad_step_size * opt.gradient[i]
+        @simd ivdep for i = 1 : n
+            @inbounds x[i] -= grad_step_size * grad_dir[i]
         end
-        reset_hessian!(opt)
-        g!(opt.gradient, opt.x, args...)
-        @simd ivdep for i = 1 : opt.n
-            @inbounds opt.bfgs_dir[i] = opt.gradient[i]
+        identity_matrix!(hess_inv)
+        g!(grad_dir, x, args...)
+        @simd ivdep for i = 1 : n
+            @inbounds bfgs_dir[i] = grad_dir[i]
         end
         return false, objective_decreased
     end
