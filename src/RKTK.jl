@@ -11,19 +11,24 @@ flush(stdout)
 
 ################################################################################
 
-using LinearAlgebra: I, qr
 using Printf
+using UUIDs
 
 push!(LOAD_PATH, @__DIR__)
-using RKTK2
 using DZMisc
 using DZOptimization
 using MultiprecisionFloats
+using RKTK2
 
 ################################################################################
 
 numstr(x) = @sprintf("%#-18.12g", BigFloat(x))
 shortstr(x) = @sprintf("%#.5g", BigFloat(x))
+score_str(x) = lpad(string(clamp(round(Int,
+    -100 * log10(BigFloat(x))), 0, 9999)), 4, '0')
+rktk_filename(opt, id) = score_str(opt.objective[1]) * '-' *
+    score_str(norm(opt.gradient)) * "-RKTK-" * uppercase(string(id)) * '-' *
+    lpad(string(opt.iteration[1]), 10, '0') * ".txt"
 
 function print_help()
     say("Usage: julia RKTK.jl <mode> [parameters...]")
@@ -33,7 +38,6 @@ function print_help()
     say()
 end
 
-
 function print_table_header()
     say(" Iteration │  Objective value  │   Gradient norm   │",
                     "  Last step size   │    Point norm     │ Type")
@@ -41,13 +45,15 @@ function print_table_header()
                     "───────────────────┼───────────────────┼──────")
 end
 
-function print_table_row(iter, obj_value, grad_norm, step_size, point_norm, type)
+function print_table_row(iter, obj_value, grad_norm,
+                         step_size, point_norm, type)
     say(" ", lpad(string(iter), 9, ' '), " | ",
         numstr(obj_value), "│ ", numstr(grad_norm),  "│ ",
         numstr(step_size), "│ ", numstr(point_norm), "│ ", type)
 end
 
-function rmk_table_row(iter, obj_value, grad_norm, step_size, point_norm, type)
+function rmk_table_row(iter, obj_value, grad_norm,
+                       step_size, point_norm, type)
     rmk(" ", lpad(string(iter), 9, ' '), " | ",
         numstr(obj_value), "│ ", numstr(grad_norm),  "│ ",
         numstr(step_size), "│ ", numstr(point_norm), "│ ", type)
@@ -65,25 +71,53 @@ end
 
 ################################################################################
 
-function search(::Type{T}, order::Int, num_stages::Int) where {T <: Real}
-    print_table_header()
+function rkoc_optimizer(::Type{T}, order::Int, num_stages::Int) where {T <: Real}
+    obj_func, grad_func = rkoc_explicit_backprop_functors(T, order, num_stages)
     num_vars = div(num_stages * (num_stages + 1), 2)
-    optimizer = BFGSOptimizer(T.(rand(BigFloat, num_vars)), inv(T(1000)),
-                              rkoc_explicit_backprop_functors(T, order, num_stages)...)
-    print_table_row(optimizer, "NONE")
-    last_print_time = time_ns()
+    x_init = T.(rand(BigFloat, num_vars))
+    BFGSOptimizer(x_init, inv(T(1_000_000)), obj_func, grad_func)
+end
+
+################################################################################
+
+function save_to_file(opt, id)
+    name = rktk_filename(opt, id)
+    rmk("Saving progress to file ", name, "...")
+    file = open(rktk_filename(opt, id), "w")
+    for x in opt.current_point
+        write(file, string(BigFloat(x)), '\n')
+    end
+    close(file)
+    rmk("Save complete.")
+end
+
+function search(::Type{T}, order::Int, num_stages::Int) where {T <: Real}
     while true
-        bfgs_used, objective_decreased = step!(optimizer)
-        if !objective_decreased
-            print_table_row(optimizer, "DONE")
-            break
-        elseif !bfgs_used
-            print_table_row(optimizer, "GRAD")
-            last_print_time = time_ns()
-        else
+        id = uuid4()
+        say("Running ", T, " search RKTK-", uppercase(string(id)), ".\n")
+        print_table_header()
+        optimizer = rkoc_optimizer(T, order, num_stages)
+        print_table_row(optimizer, "NONE")
+        # save_to_file(optimizer, id)
+        last_print_time = last_save_time = time_ns()
+        while true
+            bfgs_used, objective_decreased = step!(optimizer)
+            if !objective_decreased
+                print_table_row(optimizer, "DONE")
+                save_to_file(optimizer, id)
+                say("\nCompleted search RKTK-", uppercase(string(id)), ".\n")
+                break
+            end
             current_time = time_ns()
-            if current_time - last_print_time > 0xBEBC200
-                print_table_row(optimizer, "BFGS")
+            if current_time - last_save_time > UInt(60_000_000_000)
+                save_to_file(optimizer, id)
+                last_save_time = current_time
+            end
+            if !bfgs_used
+                print_table_row(optimizer, "GRAD")
+                last_print_time = current_time
+            elseif current_time - last_print_time > UInt(80_000_000)
+                rmk_table_row(optimizer, "BFGS")
                 last_print_time = current_time
             end
         end
@@ -97,17 +131,18 @@ if (length(ARGS) == 0) || ("-h" in ARGS) || ("--help" in ARGS)
 elseif uppercase(ARGS[1]) == "SEARCH"
     order = parse(Int, ARGS[2])
     num_stages = parse(Int, ARGS[3])
-    precision = parse(Int, ARGS[4])
-    if       precision == 32;      search(Float32,   order, num_stages)
-    elseif   precision == 64;      search(Float64,   order, num_stages)
-    elseif   precision == 128;     search(Float64x2, order, num_stages)
-    elseif   precision == 192;     search(Float64x3, order, num_stages)
-    elseif   precision == 256;     search(Float64x4, order, num_stages)
-    elseif   precision == 320;     search(Float64x5, order, num_stages)
-    elseif   precision == 384;     search(Float64x6, order, num_stages)
-    elseif   precision == 448;     search(Float64x7, order, num_stages)
-    elseif   precision == 512;     search(Float64x8, order, num_stages)
-    else; setprecision(precision); search(BigFloat,  order, num_stages)
+    prec = parse(Int, ARGS[4])
+    setprecision(prec)
+    if     prec == 32;  search(Float32,   order, num_stages)
+    elseif prec == 64;  search(Float64,   order, num_stages)
+    elseif prec == 128; search(Float64x2, order, num_stages)
+    elseif prec == 192; search(Float64x3, order, num_stages)
+    elseif prec == 256; search(Float64x4, order, num_stages)
+    elseif prec == 320; search(Float64x5, order, num_stages)
+    elseif prec == 384; search(Float64x6, order, num_stages)
+    elseif prec == 448; search(Float64x7, order, num_stages)
+    elseif prec == 512; search(Float64x8, order, num_stages)
+    else;               search(BigFloat,  order, num_stages)
     end
 else
     print_help()
