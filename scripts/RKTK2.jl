@@ -4,12 +4,14 @@ export RKOCEvaluator, evaluate_residual!, evaluate_jacobian!,
     evaluate_error_coefficients!, evaluate_error_jacobian!,
     constrain!, compute_order!, compute_stages,
     rk4_table, extrapolated_euler_table, rkck5_table, dopri5_table, rkf8_table,
-    RKSolver, runge_kutta_step!, RKOCBackpropEvaluator, evaluate_gradient!
+    RKSolver, runge_kutta_step!,
+    RKOCBackpropEvaluator, evaluate_residual2, evaluate_gradient!,
+    populate_explicit!, RKOCBackpropFSGDOptimizer, step!
 
 using Base.Threads: @threads, nthreads, threadid
 using LinearAlgebra: mul!, ldiv!, qrfactUnblocked!
 
-using DZMisc: rmk, say, dbl, norm2,
+using DZMisc: rmk, say, dbl, norm2, normalize!,
     RootedTree, rooted_tree_count, rooted_trees,
     butcher_density, butcher_symmetry
 
@@ -852,7 +854,7 @@ rkf8_table(::Type{T}) where {T <: Real} = T[
 
 ################################################################################
 
-struct RKSolver{T}
+struct RKSolver{T <: Real}
     num_stages::Int
     coeffs::Vector{T}
     dimension::Int
@@ -901,7 +903,7 @@ end
 ################################################################################
 
 function compute_butcher_weights!(m::Matrix{T}, A::Matrix{T},
-        dependencies::Vector{Vector{Int}}) where {T}
+        dependencies::Vector{Vector{Int}}) where {T <: Number}
     num_stages, num_constrs = size(m, 1), size(m, 2)
     @inbounds for i = 1 : num_constrs
         dep = dependencies[i]
@@ -929,7 +931,7 @@ end
 
 function backprop_butcher_weights!(u::Matrix{T}, A::Matrix{T}, b::Vector{T},
         m::Matrix{T}, p::Vector{T}, children::Vector{Int},
-        siblings::Vector{Vector{Tuple{Int,Int}}}) where {T}
+        siblings::Vector{Vector{Tuple{Int,Int}}}) where {T <: Number}
     num_stages, num_constrs = size(u, 1), size(u, 2)
     @inbounds for r = 0 : num_constrs - 1
         i = num_constrs - r
@@ -969,7 +971,7 @@ end
 
 ################################################################################
 
-struct RKOCBackpropEvaluator{T}
+struct RKOCBackpropEvaluator{T <: Real}
     order::Int
     num_stages::Int
     num_constrs::Int
@@ -997,8 +999,22 @@ function RKOCBackpropEvaluator{T}(order::Int, num_stages::Int) where {T <: Real}
         Vector{T}(undef, num_constrs))
 end
 
+function evaluate_residual2(A::Matrix{T}, b::Vector{T},
+        evaluator::RKOCBackpropEvaluator{T}) where {T <: Real}
+    num_constrs, inv_density = evaluator.num_constrs, evaluator.inv_density
+    m, q = evaluator.m, evaluator.q
+    compute_butcher_weights!(m, A, evaluator.dependencies)
+    mul!(q, transpose(m), b)
+    residual = zero(T)
+    @inbounds @simd ivdep for j = 1 : num_constrs
+        x = q[j] - inv_density[j]
+        residual += x * x
+    end
+    residual
+end
+
 function evaluate_gradient!(gA::Matrix{T}, gb::Vector{T}, A::Matrix{T},
-        b::Vector{T}, evaluator::RKOCBackpropEvaluator{T}) where {T}
+        b::Vector{T}, evaluator::RKOCBackpropEvaluator{T}) where {T <: Real}
     num_stages, num_constrs = evaluator.num_stages, evaluator.num_constrs
     inv_density, children = evaluator.inv_density, evaluator.children
     m, u, p, q = evaluator.m, evaluator.u, evaluator.p, evaluator.q
@@ -1028,6 +1044,84 @@ function evaluate_gradient!(gA::Matrix{T}, gb::Vector{T}, A::Matrix{T},
     end
     mul!(gb, m, p)
     residual
+end
+
+################################################################################
+
+function populate_explicit!(A::Matrix{T}, b::Vector{T}, x::Vector{T},
+        n::Int) where {T <: Number}
+    k = 0
+    for i = 1 : n
+        @simd ivdep for j = 1 : i - 1
+            @inbounds A[i,j] = x[k + j]
+        end
+        k += i - 1
+        @simd ivdep for j = i : n
+            @inbounds A[i,j] = zero(T)
+        end
+    end
+    @simd ivdep for i = 1 : n
+        @inbounds b[i] = x[k + i]
+    end
+end
+
+function populate_explicit!(x::Vector{T}, A::Matrix{T}, b::Vector{T},
+        n::Int) where {T <: Number}
+    k = 0
+    for i = 2 : n
+        @simd ivdep for j = 1 : i - 1
+            @inbounds x[k + j] = A[i,j]
+        end
+        k += i - 1
+    end
+    @simd ivdep for i = 1 : n
+        @inbounds x[k + i] = b[i]
+    end
+end
+
+################################################################################
+
+struct RKOCBackpropFSGDOptimizer{T <: Real}
+    evaluator::RKOCBackpropEvaluator{T}
+    A::Matrix{T}
+    b::Vector{T}
+    x::Vector{T}
+    gA::Matrix{T}
+    gb::Vector{T}
+    gx::Vector{T}
+end
+
+function RKOCBackpropFSGDOptimizer{T}(order::Int, num_stages::Int,
+        x_init::Vector{S}) where {S <: Real, T <: Real}
+    evaluator = RKOCBackpropEvaluator{T}(order, num_stages)
+    num_vars = div(num_stages * (num_stages + 1), 2)
+    @assert length(x_init) == num_vars
+    RKOCBackpropFSGDOptimizer{T}(evaluator,
+        Matrix{T}(undef, num_stages, num_stages),
+        Vector{T}(undef, num_stages),
+        T.(x_init),
+        Matrix{T}(undef, num_stages, num_stages),
+        Vector{T}(undef, num_stages),
+        Vector{T}(undef, num_vars))
+end
+
+function step!(optimizer::RKOCBackpropFSGDOptimizer{T},
+        step_size::T, num_steps::Int) where {T <: Real}
+    evaluator = optimizer.evaluator
+    num_stages = evaluator.num_stages
+    num_vars = div(num_stages * (num_stages + 1), 2)
+    A, b, x = optimizer.A, optimizer.b, optimizer.x
+    gA, gb, gx = optimizer.gA, optimizer.gb, optimizer.gx
+    for _ = 1 : num_steps
+        populate_explicit!(A, b, x, num_stages)
+        evaluate_gradient!(gA, gb, A, b, evaluator)
+        populate_explicit!(gx, gA, gb, num_stages)
+        normalize!(gx)
+        @simd ivdep for i = 1 : num_vars
+            @inbounds x[i] -= step_size * gx[i]
+        end
+    end
+    evaluate_residual2(A, b, evaluator)
 end
 
 end # module RKTK2
