@@ -154,11 +154,11 @@ test_backprop_evaluator()
 ################################################################################
 
 for T in (Float32, Float64, Float64x2, Float64x4, Float64x8)
-    @assert 0 == length(asm_calls(populate_explicit!,
-            (Matrix{T}, Vector{T}, Vector{T}, Int)))
-    @assert 0 == length(asm_calls(populate_explicit!,
-            (Vector{T}, Matrix{T}, Vector{T}, Int)))
-    @assert 3 == length(asm_calls(step!,
+    @test 0 == length(asm_calls(populate_explicit!,
+        (Matrix{T}, Vector{T}, Vector{T}, Int)))
+    @test 0 == length(asm_calls(populate_explicit!,
+        (Vector{T}, Matrix{T}, Vector{T}, Int)))
+    @test 3 == length(asm_calls(step!,
         (RKOCBackpropFSGDOptimizer{T}, T, Int)))
 end
 
