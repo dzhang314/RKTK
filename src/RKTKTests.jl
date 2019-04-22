@@ -3,8 +3,84 @@ using Test
 
 push!(LOAD_PATH, @__DIR__)
 using RKTK2
-using MultiprecisionFloats
 using DZMisc
+using DZOptimization
+using MultiprecisionFloats
+
+################################################################################
+
+const KNOWN_SAFE_FUNCTIONS = Regex[]
+add_safe_function!(func::String) = push!(KNOWN_SAFE_FUNCTIONS,
+    Regex("\"?(julia_)?" * func * "(_[0-9]+)?\"?"))
+
+add_safe_function!("o_memset")
+add_safe_function!("gemv!")
+add_safe_function!("generic_matvecmul!")
+
+is_safe(func::String)::Bool = any(
+    match(safe_func, func) != nothing for safe_func in KNOWN_SAFE_FUNCTIONS)
+
+function test_asm_calls(@nospecialize(func), @nospecialize(types))
+    for call in asm_calls(func, types)
+        if !is_safe(call)
+            say("\nCOMPILATION TEST FAILURE:")
+            say("Unsafe function call <", call,
+                "> in function <", func, ">.\n")
+            view_asm(func, types)
+            @test false
+        end
+    end
+end
+
+################################################################################
+
+using DZOptimization: update_inverse_hessian!
+
+for T in (Float32, Float64, Float64x2, Float64x4, Float64x8)
+    test_asm_calls(update_inverse_hessian!,
+        (Matrix{T}, T, Vector{T}, Vector{T}, Vector{T}))
+end
+
+add_safe_function!("update_inverse_hessian!")
+
+################################################################################
+
+using RKTK2: compute_butcher_weights!, backprop_butcher_weights!
+
+for T in (Float32, Float64, Float64x2, Float64x4, Float64x8)
+    test_asm_calls(compute_butcher_weights!,
+        (Matrix{T}, Matrix{T}, Vector{Vector{Int}}))
+    test_asm_calls(backprop_butcher_weights!,
+        (Matrix{T}, Matrix{T}, Vector{T}, Matrix{T}, Vector{T},
+            Vector{Int}, Vector{Vector{Tuple{Int,Int}}}))
+end
+
+add_safe_function!("compute_butcher_weights!")
+add_safe_function!("backprop_butcher_weights!")
+
+################################################################################
+
+for T in (Float32, Float64, Float64x2, Float64x4, Float64x8)
+    test_asm_calls(evaluate_gradient!,
+        (Matrix{T}, Vector{T}, Matrix{T}, Vector{T},
+            RKOCBackpropEvaluator{T}))
+end
+
+add_safe_function!("evaluate_gradient!")
+
+################################################################################
+
+using DZOptimization: StepObjectiveFunctor, quadratic_line_search
+
+for T in (Float32, Float64, Float64x2, Float64x4, Float64x8)
+    test_asm_calls(quadratic_line_search,
+        (StepObjectiveFunctor{RKOCExplicitBackpropObjectiveFunctor{T}, T}, T, T))
+end
+
+################################################################################
+
+test_asm_calls(step!, (BFGSOptimizer{RKOCExplicitBackpropObjectiveFunctor{Float64}, RKOCExplicitBackpropGradientFunctor{Float64}, Float64},))
+# exit()
 
 ################################################################################
 
@@ -97,19 +173,6 @@ test_rksolver(Float64x8, rk4_table, 10000)
 
 ################################################################################
 
-using RKTK2: compute_butcher_weights!, backprop_butcher_weights!
-
-for T in (Float32, Float64, Float64x2, Float64x4, Float64x8)
-    @test 0 == length(asm_calls(compute_butcher_weights!,
-        (Matrix{T}, Matrix{T}, Vector{Vector{Int}})))
-    @test 0 == length(asm_calls(backprop_butcher_weights!,
-        (Matrix{T}, Matrix{T}, Vector{T}, Matrix{T}, Vector{T},
-            Vector{Int}, Vector{Vector{Tuple{Int,Int}}})))
-    @test 4 == length(asm_calls(evaluate_gradient!,
-        (Matrix{T}, Vector{T}, Matrix{T}, Vector{T},
-            RKOCBackpropEvaluator{T})))
-end
-
 ################################################################################
 
 function test_backprop_evaluator()
@@ -166,11 +229,6 @@ end
 
 ################################################################################
 
-using DZOptimization: update_inverse_hessian!
-
-for T in (Float32, Float64, Float64x2, Float64x4, Float64x8)
-    @test 1 == length(asm_calls(update_inverse_hessian!,
-        (Matrix{T}, T, Vector{T}, Vector{T}, Vector{T})))
-end
+################################################################################
 
 println("All tests passed!")

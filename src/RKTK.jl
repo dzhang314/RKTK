@@ -22,6 +22,10 @@ using RKTK2
 
 ################################################################################
 
+RKOCBFGSOptimizer{T} = BFGSOptimizer{
+    RKOCExplicitBackpropObjectiveFunctor{T},
+    RKOCExplicitBackpropGradientFunctor{T}, T}
+
 struct RKTKID
     order::Int
     num_stages::Int
@@ -29,13 +33,13 @@ struct RKTKID
 end
 
 const RKTKID_REGEX = Regex(
-    "RKTK-([0-9]{2})([0-9]{2})-([0-9A-Fa-f]{8}-" *
-    "[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12})")
+    "RKTK-([0-9]{2})([0-9]{2})-([0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-" *
+    "[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12})")
 const RKTK_FILENAME_REGEX = Regex(
     "^[0-9]{4}-[0-9]{4}-RKTK-([0-9]{2})([0-9]{2})-([0-9A-Fa-f]{8}-" *
     "[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12})\\.txt\$")
 
-function find_rktkid(str)
+function find_rktkid(str::String)::Union{RKTKID,Nothing}
     m = match(RKTKID_REGEX, str)
     if m != nothing
         RKTKID(parse(Int, m[1]), parse(Int, m[2]), UUID(m[3]))
@@ -46,16 +50,17 @@ end
 
 ################################################################################
 
-numstr(x) = @sprintf("%#-18.12g", BigFloat(x))
-shortstr(x) = @sprintf("%#.5g", BigFloat(x))
-log_score(x) = round(Int, -100 * log10(BigFloat(x)))
-score_str(x) = lpad(clamp(log_score(x), 0, 9999), 4, '0')
-rktk_filename(opt, id::RKTKID) = score_str(opt.objective[1]) * '-' *
-    score_str(norm(opt.gradient)) * "-RKTK-" *
-    lpad(id.order, 2, '0') * lpad(id.num_stages, 2, '0') * '-' *
+numstr(x)::String = @sprintf("%#-18.12g", BigFloat(x))
+shortstr(x)::String = @sprintf("%#.5g", BigFloat(x))
+log_score(x)::Int = round(Int, -100 * log10(BigFloat(x)))
+score_str(x)::String = lpad(clamp(log_score(x), 0, 9999), 4, '0')
+
+rktk_filename(opt, id::RKTKID)::String =
+    score_str(opt.objective[1]) * '-' * score_str(norm(opt.gradient)) *
+    "-RKTK-" * lpad(id.order, 2, '0') * lpad(id.num_stages, 2, '0') * '-' *
     uppercase(string(id.uuid)) * ".txt"
 
-function round_precision(prec)
+function round_precision(prec::Int)::Int
     if     prec <= 32;  32  # Float32
     elseif prec <= 64;  64  # Float64
     elseif prec <= 128; 128 # Float64x2
@@ -68,7 +73,7 @@ function round_precision(prec)
     else;  prec             # BigFloat
 end end
 
-function print_help()
+function print_help()::Nothing
     say("Usage: julia RKTK.jl <command> [parameters...]")
     say()
     say("RKTK provides the following <command> options:")
@@ -76,7 +81,7 @@ function print_help()
     say()
 end
 
-function print_table_header()
+function print_table_header()::Nothing
     say(" Iteration │  Objective value  │   Gradient norm   │",
                     "  Last step size   │    Point norm     │ Type")
     say("───────────┼───────────────────┼───────────────────┼",
@@ -84,32 +89,33 @@ function print_table_header()
 end
 
 function print_table_row(iter, obj_value, grad_norm,
-                         step_size, point_norm, type)
+                         step_size, point_norm, type)::Nothing
     say(" ", lpad(iter, 9, ' '), " | ",
         numstr(obj_value), "│ ", numstr(grad_norm),  "│ ",
         numstr(step_size), "│ ", numstr(point_norm), "│ ", type)
 end
 
 function rmk_table_row(iter, obj_value, grad_norm,
-                       step_size, point_norm, type)
+                       step_size, point_norm, type)::Nothing
     rmk(" ", lpad(iter, 9, ' '), " | ",
         numstr(obj_value), "│ ", numstr(grad_norm),  "│ ",
         numstr(step_size), "│ ", numstr(point_norm), "│ ", type)
 end
 
-function print_table_row(opt, type)
+function print_table_row(opt, type)::Nothing
     print_table_row(opt.iteration[1], opt.objective[1], norm(opt.gradient),
                     opt.last_step_size[1], norm(opt.current_point), type)
 end
 
-function rmk_table_row(opt, type)
+function rmk_table_row(opt, type)::Nothing
     rmk_table_row(opt.iteration[1], opt.objective[1], norm(opt.gradient),
                   opt.last_step_size[1], norm(opt.current_point), type)
 end
 
 ################################################################################
 
-function rkoc_optimizer(::Type{T}, order::Int, num_stages::Int) where {T <: Real}
+function rkoc_optimizer(::Type{T},
+                        order::Int, num_stages::Int) where {T <: Real}
     obj_func, grad_func = rkoc_explicit_backprop_functors(T, order, num_stages)
     num_vars = div(num_stages * (num_stages + 1), 2)
     x_init = T.(rand(BigFloat, num_vars))

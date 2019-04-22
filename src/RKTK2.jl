@@ -6,7 +6,8 @@ export RKOCEvaluator, evaluate_residual!, evaluate_jacobian!,
     rk4_table, extrapolated_euler_table, rkck5_table, dopri5_table, rkf8_table,
     RKSolver, runge_kutta_step!,
     RKOCBackpropEvaluator, evaluate_residual2, evaluate_gradient!,
-    populate_explicit!, rkoc_explicit_backprop_functors
+    populate_explicit!, RKOCExplicitBackpropObjectiveFunctor,
+    RKOCExplicitBackpropGradientFunctor, rkoc_explicit_backprop_functors
 
 using Base.Threads: @threads, nthreads, threadid
 using LinearAlgebra: mul!, ldiv!, qrfactUnblocked!
