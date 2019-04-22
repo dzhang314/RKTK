@@ -152,7 +152,6 @@ function BFGSOptimizer(initial_point::Vector{T}, initial_step_size::T,
 end
 
 function step!(opt::BFGSOptimizer{S1,S2,T}) where {S1, S2, T <: Real}
-    @inbounds opt.iteration[1] += 1
     @inbounds step_size, objective = opt.last_step_size[1], opt.objective[1]
     grad_dir, bfgs_dir = opt.gradient, opt.bfgs_dir
     delta_grad, hess_inv = opt.delta_gradient, opt.hess_inv
@@ -163,8 +162,10 @@ function step!(opt::BFGSOptimizer{S1,S2,T}) where {S1, S2, T <: Real}
     bfgs_step_size, bfgs_obj = quadratic_line_search(
         opt.bfgs_functor, objective, step_size / bfgs_norm)
     if bfgs_obj <= grad_obj
+        if !(bfgs_obj < objective)
+            return true, false
+        end
         @inbounds opt.objective[1] = bfgs_obj
-        objective_decreased = (bfgs_obj < objective)
         @inbounds opt.last_step_size[1] = bfgs_step_size * bfgs_norm
         @simd ivdep for i = 1 : n
             @inbounds x[i] -= bfgs_step_size * bfgs_dir[i]
@@ -179,10 +180,13 @@ function step!(opt::BFGSOptimizer{S1,S2,T}) where {S1, S2, T <: Real}
         update_inverse_hessian!(hess_inv, -bfgs_step_size, bfgs_dir,
             delta_grad, opt.temp_buffer)
         mul!(bfgs_dir, hess_inv, grad_dir)
-        true, objective_decreased
+        @inbounds opt.iteration[1] += 1
+        return true, true
     else
+        if !(grad_obj < objective)
+            return false, false
+        end
         @inbounds opt.objective[1] = grad_obj
-        objective_decreased = (grad_obj < objective)
         @inbounds opt.last_step_size[1] = grad_step_size * grad_norm
         @simd ivdep for i = 1 : n
             @inbounds x[i] -= grad_step_size * grad_dir[i]
@@ -192,7 +196,8 @@ function step!(opt::BFGSOptimizer{S1,S2,T}) where {S1, S2, T <: Real}
         @simd ivdep for i = 1 : n
             @inbounds bfgs_dir[i] = grad_dir[i]
         end
-        false, objective_decreased
+        @inbounds opt.iteration[1] += 1
+        return false, true
     end
 end
 

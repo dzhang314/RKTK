@@ -47,13 +47,16 @@ function test_asm_calls(@nospecialize(func), type_template::Expr)
 end
 
 macro test_block(name::String, block::Expr)
-    Expr(:block, :(say("\nRunning ", $name, " tests...")),
-        block, :(say("All ", $name, " tests passed.")))
+    Expr(:block, :(say("Running ", $name, " tests...")),
+        block, :(say("All ", $name, " tests passed.\n")))
 end
+
+say()
 
 ################################################################################
 
 @test_block "DZMisc compilation" begin
+    test_asm_calls(orthonormalize_columns!, :(Matrix{_},))
     test_asm_calls(norm, :(Vector{_},))
     test_asm_calls(norm2, :(Vector{_},))
     test_asm_calls(normalize!, :(Vector{_},))
