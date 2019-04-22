@@ -100,7 +100,8 @@ struct StepObjectiveFunctor{S, T <: Real}
     step_direction::Vector{T}
 end
 
-function (so::StepObjectiveFunctor{S,T})(step_size::T)::T where {S, T <: Real}
+@inline function (so::StepObjectiveFunctor{S,T})(
+        step_size::T)::T where {S, T <: Real}
     x, step, dx = so.base_point, so.step_point, so.step_direction
     n = length(x)
     @simd ivdep for i = 1 : n

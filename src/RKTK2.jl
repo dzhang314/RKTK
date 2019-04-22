@@ -1096,14 +1096,14 @@ struct RKOCExplicitBackpropGradientFunctor{T <: Real}
     gb::Vector{T}
 end
 
-function (of::RKOCExplicitBackpropObjectiveFunctor{T})(
+@inline function (of::RKOCExplicitBackpropObjectiveFunctor{T})(
         x::Vector{T})::T where {T <: Real}
     A, b, evaluator = of.A, of.b, of.evaluator
     populate_explicit!(A, b, x, evaluator.num_stages)
     evaluate_residual2(A, b, evaluator)
 end
 
-function (gf::RKOCExplicitBackpropGradientFunctor{T})(
+@inline function (gf::RKOCExplicitBackpropGradientFunctor{T})(
         gx::Vector{T}, x::Vector{T})::T where {T <: Real}
     A, b, gA, gb, evaluator = gf.A, gf.b, gf.gA, gf.gb, gf.evaluator
     populate_explicit!(A, b, x, evaluator.num_stages)
