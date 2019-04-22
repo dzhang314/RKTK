@@ -242,11 +242,21 @@ function refine(::Type{T}, filename::String) where {T <: Real}
     if precision(BigFloat) < old_prec
         say("WARNING: Refining at lower precision than source file.\n")
     end
-    run!(rkoc_optimizer(T, id.order, id.num_stages,
-        BigFloat.(point_data[2:end]), parse(Int, header[1])), id)
-    say("\nCompleted ", T, " refinement RKTK-",
-        lpad(id.order, 2, '0'), lpad(id.num_stages, 2, '0'), '-',
-        uppercase(string(id.uuid)), ".\n")
+    optimizer = rkoc_optimizer(T, id.order, id.num_stages,
+        BigFloat.(point_data[2:end]), parse(Int, header[1]))
+    starting_iteration = optimizer.iteration[1]
+    run!(optimizer, id)
+    ending_iteration = optimizer.iteration[1]
+    if ending_iteration > starting_iteration
+        say("\nRepeating ", T, " refinement RKTK-",
+            lpad(id.order, 2, '0'), lpad(id.num_stages, 2, '0'), '-',
+            uppercase(string(id.uuid)), ".\n")
+        refine(T, find_filename_by_id(id))
+    else
+        say("\nCompleted ", T, " refinement RKTK-",
+            lpad(id.order, 2, '0'), lpad(id.num_stages, 2, '0'), '-',
+            uppercase(string(id.uuid)), ".\n")
+    end
 end
 
 function main()
@@ -279,7 +289,7 @@ function main()
     elseif uppercase(ARGS[1]) == "CLEAN"
         prec = round_precision(parse(Int, ARGS[2]))
         setprecision(prec)
-        for filename in readdir()
+        for filename in reverse(readdir())
             if match(RKTK_FILENAME_REGEX, filename) != nothing
                 id = find_rktkid(filename)
                 refine(precision_type(prec), filename)
