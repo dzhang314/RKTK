@@ -73,6 +73,19 @@ function round_precision(prec::Int)::Int
     else;  prec             # BigFloat
 end end
 
+function precision_type(prec::Int)::Type
+    if     prec <= 32;  Float32
+    elseif prec <= 64;  Float64
+    elseif prec <= 128; Float64x2
+    elseif prec <= 192; Float64x3
+    elseif prec <= 256; Float64x4
+    elseif prec <= 320; Float64x5
+    elseif prec <= 384; Float64x6
+    elseif prec <= 448; Float64x7
+    elseif prec <= 512; Float64x8
+    else;               BigFloat
+end end
+
 function print_help()::Nothing
     say("Usage: julia RKTK.jl <command> [parameters...]")
     say()
@@ -114,12 +127,22 @@ end
 
 ################################################################################
 
-function rkoc_optimizer(::Type{T},
-                        order::Int, num_stages::Int) where {T <: Real}
+function rkoc_optimizer(::Type{T}, order::Int,
+        num_stages::Int) where {T <: Real}
     obj_func, grad_func = rkoc_explicit_backprop_functors(T, order, num_stages)
     num_vars = div(num_stages * (num_stages + 1), 2)
     x_init = T.(rand(BigFloat, num_vars))
     BFGSOptimizer(x_init, inv(T(1_000_000)), obj_func, grad_func)
+end
+
+function rkoc_optimizer(::Type{T}, order::Int, num_stages::Int,
+        x_init::Vector{BigFloat}, num_iters::Int) where {T <: Real}
+    obj_func, grad_func = rkoc_explicit_backprop_functors(T, order, num_stages)
+    num_vars = div(num_stages * (num_stages + 1), 2)
+    @assert length(x_init) == num_vars
+    opt = BFGSOptimizer(T.(x_init), inv(T(1_000_000)), obj_func, grad_func)
+    opt.iteration[1] = num_iters
+    opt
 end
 
 ################################################################################
@@ -137,11 +160,25 @@ function find_filename_by_id(id::RKTKID)
     return nothing
 end
 
-function save_to_file(opt, id::RKTKID)
+function save_to_file(opt::RKOCBFGSOptimizer{T}, id::RKTKID) where {T <: Real}
     filename = rktk_filename(opt, id)
     rmk("Saving progress to file ", filename, "...")
     old_filename = find_filename_by_id(id)
-    if old_filename != nothing; mv(old_filename, filename); end
+    if old_filename != nothing
+        if old_filename != filename
+            mv(old_filename, filename)
+        end
+        trajectory = filter(!isempty,
+            strip.(split(read(filename, String), "\n\n")))
+        point_data = filter(!isempty, strip.(split(trajectory[end], '\n')))
+        header = split(point_data[1])
+        num_iters = parse(Int, header[1])
+        prec = parse(Int, header[2])
+        if (precision(BigFloat) <= prec) && (opt.iteration[1] <= num_iters)
+            rmk("No save necessary.")
+            return
+        end
+    end
     file = open(filename, "a+")
     println(file, opt.iteration[1], ' ', precision(BigFloat), ' ',
             log_score(opt.objective[1]), ' ', log_score(norm(opt.gradient)))
@@ -153,7 +190,7 @@ function save_to_file(opt, id::RKTKID)
     rmk("Save complete.")
 end
 
-function run!(opt, id::RKTKID)
+function run!(opt::RKOCBFGSOptimizer{T}, id::RKTKID) where {T <: Real}
     print_table_header()
     print_table_row(opt, "NONE")
     save_to_file(opt, id)
@@ -183,52 +220,78 @@ end
 function search(::Type{T}, id::RKTKID) where {T <: Real}
     optimizer = rkoc_optimizer(T, id.order, id.num_stages)
     say("Running ", T, " search RKTK-",
-        lpad(order, 2, '0'), lpad(num_stages, 2, '0'),
+        lpad(id.order, 2, '0'), lpad(id.num_stages, 2, '0'), '-',
         uppercase(string(id.uuid)), ".\n")
     run!(optimizer, id)
-    say("\nCompleted search RKTK-", uppercase(string(id.uuid)), ".\n")
+    say("\nCompleted ", T, " search RKTK-",
+        lpad(id.order, 2, '0'), lpad(id.num_stages, 2, '0'), '-',
+        uppercase(string(id.uuid)), ".\n")
 end
 
 ################################################################################
 
-if (length(ARGS) == 0) || ("-h" in ARGS) || ("--help" in ARGS)
-    print_help()
-elseif uppercase(ARGS[1]) == "SEARCH"
-    order = parse(Int, ARGS[2])
-    num_stages = parse(Int, ARGS[3])
-    prec = round_precision(parse(Int, ARGS[4]))
-    setprecision(prec)
-    if     prec == 32;  search(Float32,   RKTKID(order, num_stages, uuid4()))
-    elseif prec == 64;  search(Float64,   RKTKID(order, num_stages, uuid4()))
-    elseif prec == 128; search(Float64x2, RKTKID(order, num_stages, uuid4()))
-    elseif prec == 192; search(Float64x3, RKTKID(order, num_stages, uuid4()))
-    elseif prec == 256; search(Float64x4, RKTKID(order, num_stages, uuid4()))
-    elseif prec == 320; search(Float64x5, RKTKID(order, num_stages, uuid4()))
-    elseif prec == 384; search(Float64x6, RKTKID(order, num_stages, uuid4()))
-    elseif prec == 448; search(Float64x7, RKTKID(order, num_stages, uuid4()))
-    elseif prec == 512; search(Float64x8, RKTKID(order, num_stages, uuid4()))
-    else;               search(BigFloat,  RKTKID(order, num_stages, uuid4()))
+function refine(::Type{T}, filename::String) where {T <: Real}
+    id = find_rktkid(filename)
+    say("Running ", T, " refinement RKTK-",
+        lpad(id.order, 2, '0'), lpad(id.num_stages, 2, '0'), '-',
+        uppercase(string(id.uuid)), ".\n")
+    trajectory = filter(!isempty, strip.(split(read(filename, String), "\n\n")))
+    point_data = filter(!isempty, strip.(split(trajectory[end], '\n')))
+    header = split(point_data[1])
+    old_prec = round_precision(parse(Int, header[2]))
+    if precision(BigFloat) < old_prec
+        say("WARNING: Refining at lower precision than source file.\n")
     end
-elseif uppercase(ARGS[1]) == "REFINE"
-    id = find_rktkid(ARGS[2])
-    if id == nothing
-        say("ERROR: Invalid RKTK ID ", ARGS[2], ".")
-        say("RKTK IDs have the form ",
-            "RKTK-XXYY-ZZZZZZZZ-ZZZZ-ZZZZ-ZZZZ-ZZZZZZZZZZZZ.\n")
-        exit(-1)
-    end
-    filename = find_filename_by_id(id)
-    if filename == nothing
-        say("ERROR: No file exists with RKTK ID ", id, ".\n")
-        exit(-1)
-    end
-    trajectory = strip.(split(read(filename, String), "\n\n"))
-    filter!(!isempty, trajectory)
-    println(split(trajectory[end], '\n'))
-else
-    say("ERROR: Unrecognized <command> option ", ARGS[1], ".\n")
-    print_help()
+    run!(rkoc_optimizer(T, id.order, id.num_stages,
+        BigFloat.(point_data[2:end]), parse(Int, header[1])), id)
+    say("\nCompleted ", T, " refinement RKTK-",
+        lpad(id.order, 2, '0'), lpad(id.num_stages, 2, '0'), '-',
+        uppercase(string(id.uuid)), ".\n")
 end
+
+function main()
+    if (length(ARGS) == 0) || ("-h" in ARGS) || ("--help" in ARGS)
+        print_help()
+    elseif uppercase(ARGS[1]) == "SEARCH"
+        order = parse(Int, ARGS[2])
+        num_stages = parse(Int, ARGS[3])
+        prec = round_precision(parse(Int, ARGS[4]))
+        setprecision(prec)
+        while true
+            search(precision_type(prec), RKTKID(order, num_stages, uuid4()))
+        end
+    elseif uppercase(ARGS[1]) == "REFINE"
+        id = find_rktkid(ARGS[2])
+        if id == nothing
+            say("ERROR: Invalid RKTK ID ", ARGS[2], ".")
+            say("RKTK IDs have the form ",
+                "RKTK-XXYY-ZZZZZZZZ-ZZZZ-ZZZZ-ZZZZ-ZZZZZZZZZZZZ.\n")
+            exit()
+        end
+        filename = find_filename_by_id(id)
+        if filename == nothing
+            say("ERROR: No file exists with RKTK ID ", id, ".\n")
+            exit()
+        end
+        prec = round_precision(parse(Int, ARGS[3]))
+        setprecision(prec)
+        refine(precision_type(prec), filename)
+    elseif uppercase(ARGS[1]) == "CLEAN"
+        prec = round_precision(parse(Int, ARGS[2]))
+        setprecision(prec)
+        for filename in readdir()
+            if match(RKTK_FILENAME_REGEX, filename) != nothing
+                id = find_rktkid(filename)
+                refine(precision_type(prec), filename)
+            end
+        end
+    else
+        say("ERROR: Unrecognized <command> option ", ARGS[1], ".\n")
+        print_help()
+    end
+end
+
+main()
 
 # const AccurateReal = Float64x4
 # const THRESHOLD = AccurateReal(1e-40)
