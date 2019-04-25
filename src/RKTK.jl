@@ -93,16 +93,15 @@ end
 function find_filename_by_id(dir::String, id::RKTKID)::Union{String,Nothing}
     result = nothing
     for filename in readdir(dir)
-        if (m = match(RKTK_FILENAME_REGEX, filename)) != nothing
-            if ((parse(Int, m[1]) == id.order) &&
-                    (parse(Int, m[2]) == id.num_stages) &&
-                    (UUID(m[3]) == id.uuid))
-                if result != nothing
-                    say("ERROR: Found two files with the same RKTK ID.")
-                    exit()
-                else
-                    result = filename
-                end
+        m = match(RKTK_FILENAME_REGEX, filename)
+        if ((m != nothing) && (parse(Int, m[1]) == id.order) &&
+                (parse(Int, m[2]) == id.num_stages) && (UUID(m[3]) == id.uuid))
+            if result != nothing
+                say("ERROR: Found multiple files with RKTK ID ",
+                    string(id), ".")
+                exit()
+            else
+                result = filename
             end
         end
     end
@@ -269,7 +268,7 @@ function refine(::Type{T}, id::RKTKID, filename::String) where {T <: Real}
     ending_iteration = optimizer.iteration[1]
     if ending_iteration > starting_iteration
         say("\nRepeating $(type_name(T)) refinement $(string(id)).\n")
-        refine(T, find_filename_by_id(id))
+        refine(T, id, find_filename_by_id(".", id))
     else
         say("\nCompleted $(type_name(T)) refinement $(string(id)).\n")
     end
@@ -332,11 +331,11 @@ function get_order(n::Int)
     result
 end
 
-function get_order(n::Int)
+function get_num_stages(n::Int)
     result = tryparse(Int, ARGS[n])
-    if (result == nothing) || (result < 1) || (result > 20)
-        say("ERROR: Order parameter $n (\"$(ARGS[n])\") must be ",
-            "an integer between 1 and 20.")
+    if (result == nothing) || (result < 1) || (result > 99)
+        say("ERROR: Stage parameter $n (\"$(ARGS[n])\") must be ",
+            "an integer between 1 and 99.")
         exit()
     end
     result
@@ -347,8 +346,7 @@ function main()
     if (length(ARGS) == 0) || ("-h" in ARGS) || ("--help" in ARGS)
         print_help()
     elseif uppercase(ARGS[1]) == "SEARCH"
-        order = get_order(2)
-        num_stages = parse(Int, ARGS[3])
+        order, num_stages = get_order(2), get_num_stages(3)
         prec = parse(Int, ARGS[4])
         while true
             search(precision_type(prec), RKTKID(order, num_stages, uuid4()))
@@ -361,24 +359,22 @@ function main()
                 "RKTK-XXYY-ZZZZZZZZ-ZZZZ-ZZZZ-ZZZZ-ZZZZZZZZZZZZ.\n")
             exit()
         end
-        filename = find_filename_by_id(id)
+        filename = find_filename_by_id(".", id)
         if filename == nothing
-            say("ERROR: No file exists with RKTK ID ", id, ".\n")
+            say("ERROR: No file exists with RKTK ID ", string(id), ".\n")
             exit()
         end
         prec = parse(Int, ARGS[3])
-        refine(precision_type(prec), filename)
+        refine(precision_type(prec), id, filename)
     elseif uppercase(ARGS[1]) == "CLEAN"
         prec = parse(Int, ARGS[2])
         for filename in reverse(readdir())
             if match(RKTK_FILENAME_REGEX, filename) != nothing
-                id = find_rktkid(filename)
-                refine(precision_type(prec), filename)
+                refine(precision_type(prec), find_rktkid(filename), filename)
             end
         end
     elseif uppercase(ARGS[1]) == "BENCHMARK"
-        order = get_order(2)
-        num_stages = parse(Int, ARGS[3])
+        order, num_stages = get_order(2), get_num_stages(3)
         benchmark_secs = parse(Float64, ARGS[4])
         num_trials = parse(Int, ARGS[5])
         for T in (Float32, Float64, Float64x2, Float64x3, Float64x4,
