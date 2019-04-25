@@ -11,14 +11,52 @@ flush(stdout)
 
 ################################################################################
 
-using Printf
-using UUIDs
+using Printf: @sprintf
+using Statistics: mean, std
+using UUIDs: UUID, uuid4
 
 push!(LOAD_PATH, @__DIR__)
 using DZMisc
 using DZOptimization
 using MultiprecisionFloats
 using RKTK2
+
+################################################################################
+
+function precision_type(prec::Int)::Type
+    if     prec <= 32;  Float32
+    elseif prec <= 64;  Float64
+    elseif prec <= 128; Float64x2
+    elseif prec <= 192; Float64x3
+    elseif prec <= 256; Float64x4
+    elseif prec <= 320; Float64x5
+    elseif prec <= 384; Float64x6
+    elseif prec <= 448; Float64x7
+    elseif prec <= 512; Float64x8
+    else;               BigFloat
+end end
+
+approx_precision(::Type{Float32  }) = 32
+approx_precision(::Type{Float64  }) = 64
+approx_precision(::Type{Float64x2}) = 128
+approx_precision(::Type{Float64x3}) = 192
+approx_precision(::Type{Float64x4}) = 256
+approx_precision(::Type{Float64x5}) = 320
+approx_precision(::Type{Float64x6}) = 384
+approx_precision(::Type{Float64x7}) = 448
+approx_precision(::Type{Float64x8}) = 512
+approx_precision(::Type{BigFloat }) = precision(BigFloat)
+
+type_name(::Type{Float32  }) = "Float32"
+type_name(::Type{Float64  }) = "Float64"
+type_name(::Type{Float64x2}) = "Float64x2"
+type_name(::Type{Float64x3}) = "Float64x3"
+type_name(::Type{Float64x4}) = "Float64x4"
+type_name(::Type{Float64x5}) = "Float64x5"
+type_name(::Type{Float64x6}) = "Float64x6"
+type_name(::Type{Float64x7}) = "Float64x7"
+type_name(::Type{Float64x8}) = "Float64x8"
+type_name(::Type{BigFloat }) = "BigFloat(" * string(precision(BigFloat)) * ')'
 
 ################################################################################
 
@@ -31,6 +69,10 @@ struct RKTKID
     num_stages::Int
     uuid::UUID
 end
+
+Base.string(id::RKTKID) = "RKTK-" *
+    lpad(id.order, 2, '0') * lpad(id.num_stages, 2, '0') * '-' *
+    uppercase(string(id.uuid))
 
 const RKTKID_REGEX = Regex(
     "RKTK-([0-9]{2})([0-9]{2})-([0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-" *
@@ -48,43 +90,45 @@ function find_rktkid(str::String)::Union{RKTKID,Nothing}
     end
 end
 
+function find_filename_by_id(dir::String, id::RKTKID)::Union{String,Nothing}
+    result = nothing
+    for filename in readdir(dir)
+        if (m = match(RKTK_FILENAME_REGEX, filename)) != nothing
+            if ((parse(Int, m[1]) == id.order) &&
+                    (parse(Int, m[2]) == id.num_stages) &&
+                    (UUID(m[3]) == id.uuid))
+                if result != nothing
+                    say("ERROR: Found two files with the same RKTK ID.")
+                    exit()
+                else
+                    result = filename
+                end
+            end
+        end
+    end
+    result
+end
+
 ################################################################################
+
+function log_score(x)::Int
+    bx = BigFloat(x)
+    if iszero(bx)
+        typemax(Int)
+    elseif isfinite(bx)
+        round(Int, -100 * log10(bx))
+    else
+        0
+    end
+end
 
 numstr(x)::String = @sprintf("%#-18.12g", BigFloat(x))
 shortstr(x)::String = @sprintf("%#.5g", BigFloat(x))
-log_score(x)::Int = round(Int, -100 * log10(BigFloat(x)))
 score_str(x)::String = lpad(clamp(log_score(x), 0, 9999), 4, '0')
 
 rktk_filename(opt, id::RKTKID)::String =
     score_str(opt.objective[1]) * '-' * score_str(norm(opt.gradient)) *
-    "-RKTK-" * lpad(id.order, 2, '0') * lpad(id.num_stages, 2, '0') * '-' *
-    uppercase(string(id.uuid)) * ".txt"
-
-function round_precision(prec::Int)::Int
-    if     prec <= 32;  32  # Float32
-    elseif prec <= 64;  64  # Float64
-    elseif prec <= 128; 128 # Float64x2
-    elseif prec <= 192; 192 # Float64x3
-    elseif prec <= 256; 256 # Float64x4
-    elseif prec <= 320; 320 # Float64x5
-    elseif prec <= 384; 384 # Float64x6
-    elseif prec <= 448; 448 # Float64x7
-    elseif prec <= 512; 512 # Float64x8
-    else;  prec             # BigFloat
-end end
-
-function precision_type(prec::Int)::Type
-    if     prec <= 32;  Float32
-    elseif prec <= 64;  Float64
-    elseif prec <= 128; Float64x2
-    elseif prec <= 192; Float64x3
-    elseif prec <= 256; Float64x4
-    elseif prec <= 320; Float64x5
-    elseif prec <= 384; Float64x6
-    elseif prec <= 448; Float64x7
-    elseif prec <= 512; Float64x8
-    else;               BigFloat
-end end
+    '-' * string(id) * ".txt"
 
 function print_help()::Nothing
     say("Usage: julia RKTK.jl <command> [parameters...]")
@@ -127,14 +171,6 @@ end
 
 ################################################################################
 
-function rkoc_optimizer(::Type{T}, order::Int,
-        num_stages::Int) where {T <: Real}
-    obj_func, grad_func = rkoc_explicit_backprop_functors(T, order, num_stages)
-    num_vars = div(num_stages * (num_stages + 1), 2)
-    x_init = T.(rand(BigFloat, num_vars))
-    BFGSOptimizer(x_init, inv(T(1_000_000)), obj_func, grad_func)
-end
-
 function rkoc_optimizer(::Type{T}, order::Int, num_stages::Int,
         x_init::Vector{BigFloat}, num_iters::Int) where {T <: Real}
     obj_func, grad_func = rkoc_explicit_backprop_functors(T, order, num_stages)
@@ -147,23 +183,10 @@ end
 
 ################################################################################
 
-function find_filename_by_id(id::RKTKID)
-    for filename in readdir()
-        if (m = match(RKTK_FILENAME_REGEX, filename)) != nothing
-            if ((parse(Int, m[1]) == id.order) &&
-                    (parse(Int, m[2]) == id.num_stages) &&
-                    (UUID(m[3]) == id.uuid))
-                return filename
-            end
-        end
-    end
-    return nothing
-end
-
 function save_to_file(opt::RKOCBFGSOptimizer{T}, id::RKTKID) where {T <: Real}
     filename = rktk_filename(opt, id)
     rmk("Saving progress to file ", filename, "...")
-    old_filename = find_filename_by_id(id)
+    old_filename = find_filename_by_id(".", id)
     if old_filename != nothing
         if old_filename != filename
             mv(old_filename, filename)
@@ -217,28 +240,25 @@ function run!(opt::RKOCBFGSOptimizer{T}, id::RKTKID) where {T <: Real}
     end
 end
 
-function search(::Type{T}, id::RKTKID) where {T <: Real}
-    optimizer = rkoc_optimizer(T, id.order, id.num_stages)
-    say("Running ", T, " search RKTK-",
-        lpad(id.order, 2, '0'), lpad(id.num_stages, 2, '0'), '-',
-        uppercase(string(id.uuid)), ".\n")
-    run!(optimizer, id)
-    say("\nCompleted ", T, " search RKTK-",
-        lpad(id.order, 2, '0'), lpad(id.num_stages, 2, '0'), '-',
-        uppercase(string(id.uuid)), ".\n")
-end
-
 ################################################################################
 
-function refine(::Type{T}, filename::String) where {T <: Real}
-    id = find_rktkid(filename)
-    say("Running ", T, " refinement RKTK-",
-        lpad(id.order, 2, '0'), lpad(id.num_stages, 2, '0'), '-',
-        uppercase(string(id.uuid)), ".\n")
+function search(::Type{T}, id::RKTKID) where {T <: Real}
+    setprecision(approx_precision(T))
+    num_vars = div(id.num_stages * (id.num_stages + 1), 2)
+    optimizer = rkoc_optimizer(T, id.order, id.num_stages,
+        rand(BigFloat, num_vars), 0)
+    say("Running $(type_name(T)) search $(string(id)).\n")
+    run!(optimizer, id)
+    say("\nCompleted $(type_name(T)) search $(string(id)).\n")
+end
+
+function refine(::Type{T}, id::RKTKID, filename::String) where {T <: Real}
+    setprecision(approx_precision(T))
+    say("Running ", T, " refinement $(string(id)).\n")
     trajectory = filter(!isempty, strip.(split(read(filename, String), "\n\n")))
     point_data = filter(!isempty, strip.(split(trajectory[end], '\n')))
     header = split(point_data[1])
-    old_prec = round_precision(parse(Int, header[2]))
+    old_prec = parse(Int, header[2])
     if precision(BigFloat) < old_prec
         say("WARNING: Refining at lower precision than source file.\n")
     end
@@ -248,25 +268,88 @@ function refine(::Type{T}, filename::String) where {T <: Real}
     run!(optimizer, id)
     ending_iteration = optimizer.iteration[1]
     if ending_iteration > starting_iteration
-        say("\nRepeating ", T, " refinement RKTK-",
-            lpad(id.order, 2, '0'), lpad(id.num_stages, 2, '0'), '-',
-            uppercase(string(id.uuid)), ".\n")
+        say("\nRepeating $(type_name(T)) refinement $(string(id)).\n")
         refine(T, find_filename_by_id(id))
     else
-        say("\nCompleted ", T, " refinement RKTK-",
-            lpad(id.order, 2, '0'), lpad(id.num_stages, 2, '0'), '-',
-            uppercase(string(id.uuid)), ".\n")
+        say("\nCompleted $(type_name(T)) refinement $(string(id)).\n")
     end
 end
 
+function benchmark(::Type{T}, order::Int, num_stages::Int,
+        benchmark_secs) where {T <: Real}
+    setprecision(approx_precision(T))
+    num_vars = div(num_stages * (num_stages + 1), 2)
+    x_init = [BigFloat(i) / num_vars for i = 1 : num_vars]
+    construction_ns = time_ns()
+    opt = rkoc_optimizer(T, order, num_stages, x_init, 0)
+    start_ns = time_ns()
+    benchmark_ns = round(typeof(start_ns), benchmark_secs * 1_000_000_000)
+    terminated_early = false
+    while time_ns() - start_ns < benchmark_ns
+        _, made_progress = step!(opt)
+        if !made_progress
+            terminated_early = true
+            break
+        end
+    end
+    Int(start_ns - construction_ns), opt.iteration[1], terminated_early
+end
+
+function benchmark(::Type{T}, order::Int, num_stages::Int,
+        benchmark_secs, num_trials::Int) where {T <: Real}
+    construction_secs = Float64[]
+    iteration_counts = Int[]
+    success = true
+    for _ = 1 : num_trials
+        construction_ns, iteration_count, terminated_early =
+            benchmark(T, order, num_stages, benchmark_secs / num_trials)
+        push!(construction_secs, construction_ns / 1_000_000_000)
+        push!(iteration_counts, iteration_count)
+        if terminated_early
+            success = false
+            break
+        end
+    end
+    if success
+        say(rpad("$(type_name(T)): ", 16, ' '),
+            shortstr(mean(iteration_counts)), " ± ",
+            shortstr(std(iteration_counts)))
+    else
+        say(rpad("$(type_name(T)): ", 16, ' '),
+            "Search terminated too early")
+    end
+end
+
+################################################################################
+
+function get_order(n::Int)
+    result = tryparse(Int, ARGS[n])
+    if (result == nothing) || (result < 1) || (result > 20)
+        say("ERROR: Parameter $n (\"$(ARGS[n])\") must be ",
+            "an integer between 1 and 20.")
+        exit()
+    end
+    result
+end
+
+function get_order(n::Int)
+    result = tryparse(Int, ARGS[n])
+    if (result == nothing) || (result < 1) || (result > 20)
+        say("ERROR: Order parameter $n (\"$(ARGS[n])\") must be ",
+            "an integer between 1 and 20.")
+        exit()
+    end
+    result
+end
+
 function main()
+
     if (length(ARGS) == 0) || ("-h" in ARGS) || ("--help" in ARGS)
         print_help()
     elseif uppercase(ARGS[1]) == "SEARCH"
-        order = parse(Int, ARGS[2])
+        order = get_order(2)
         num_stages = parse(Int, ARGS[3])
-        prec = round_precision(parse(Int, ARGS[4]))
-        setprecision(prec)
+        prec = parse(Int, ARGS[4])
         while true
             search(precision_type(prec), RKTKID(order, num_stages, uuid4()))
         end
@@ -283,18 +366,31 @@ function main()
             say("ERROR: No file exists with RKTK ID ", id, ".\n")
             exit()
         end
-        prec = round_precision(parse(Int, ARGS[3]))
-        setprecision(prec)
+        prec = parse(Int, ARGS[3])
         refine(precision_type(prec), filename)
     elseif uppercase(ARGS[1]) == "CLEAN"
-        prec = round_precision(parse(Int, ARGS[2]))
-        setprecision(prec)
+        prec = parse(Int, ARGS[2])
         for filename in reverse(readdir())
             if match(RKTK_FILENAME_REGEX, filename) != nothing
                 id = find_rktkid(filename)
                 refine(precision_type(prec), filename)
             end
         end
+    elseif uppercase(ARGS[1]) == "BENCHMARK"
+        order = get_order(2)
+        num_stages = parse(Int, ARGS[3])
+        benchmark_secs = parse(Float64, ARGS[4])
+        num_trials = parse(Int, ARGS[5])
+        for T in (Float32, Float64, Float64x2, Float64x3, Float64x4,
+                    Float64x5, Float64x6, Float64x7, Float64x8)
+            benchmark(T, order, num_stages, benchmark_secs, num_trials)
+        end
+        for T in (Float32, Float64, Float64x2, Float64x3, Float64x4,
+                    Float64x5, Float64x6, Float64x7, Float64x8)
+            setprecision(approx_precision(T))
+            benchmark(BigFloat, order, num_stages, benchmark_secs, num_trials)
+        end
+        say()
     else
         say("ERROR: Unrecognized <command> option ", ARGS[1], ".\n")
         print_help()

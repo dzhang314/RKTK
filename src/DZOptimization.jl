@@ -37,7 +37,8 @@ end
 
 function quadratic_line_search(f::S, f0::T,
                                x1::T)::Tuple{T,T} where {S, T <: Real}
-    if isnan(f0)
+    # TODO: In principle, we could make this work for f0 == +Inf.
+    if !isfinite(f0) || !isfinite(x1)
         return zero(T), f0
     end
     f1 = f(x1)
