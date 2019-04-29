@@ -82,7 +82,7 @@ const RKTKID_REGEX = Regex(
     "RKTK-([0-9]{2})([0-9]{2})-([0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-" *
     "[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12})")
 const RKTK_FILENAME_REGEX = Regex(
-    "^[0-9]{4}-[0-9]{4}-RKTK-([0-9]{2})([0-9]{2})-([0-9A-Fa-f]{8}-" *
+    "^[0-9]{4}-[0-9]{4}-[0-9]{4}-RKTK-([0-9]{2})([0-9]{2})-([0-9A-Fa-f]{8}-" *
     "[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12})\\.txt\$")
 
 function find_rktkid(str::String)::Union{RKTKID,Nothing}
@@ -97,7 +97,7 @@ end
 function find_filename_by_id(dir::String, id::RKTKID)::Union{String,Nothing}
     result = nothing
     for filename in readdir(dir)
-        m = match(RKTK_FILENAME_REGEX, filename)
+        m = match(RKTKID_REGEX, filename)
         if ((m != nothing) && (parse(Int, m[1]) == id.order) &&
                 (parse(Int, m[2]) == id.num_stages) && (UUID(m[3]) == id.uuid))
             if result != nothing
@@ -116,22 +116,32 @@ end
 
 function log_score(x)::Int
     bx = BigFloat(x)
-    if iszero(bx)
-        typemax(Int)
-    elseif isfinite(bx)
-        round(Int, -100 * log10(bx))
-    else
-        0
+    if     iszero(bx);   typemax(Int)
+    elseif isfinite(bx); round(Int, -100 * log10(bx))
+    else;                0
     end
 end
 
-numstr(x)::String = @sprintf("%#-18.12g", BigFloat(x))
-shortstr(x)::String = @sprintf("%#.5g", BigFloat(x))
+function scaled_log_score(x)
+    bx = BigFloat(x)
+    if     iszero(bx);   typemax(Int)
+    elseif isfinite(bx); round(Int, 10000 - 3333 * log10(bx) / 2)
+    else;                0
+    end
+end
+
 score_str(x)::String = lpad(clamp(log_score(x), 0, 9999), 4, '0')
+scaled_score_str(x)::String = lpad(clamp(scaled_log_score(x), 0, 9999), 4, '0')
+
+rktk_score_str(opt::RKOCBFGSOptimizer{T}) where {T <: Real} =
+    score_str(opt.objective[1]) * '-' * score_str(norm(opt.gradient)) *
+        '-' * scaled_score_str(norm(opt.current_point))
 
 rktk_filename(opt, id::RKTKID)::String =
-    score_str(opt.objective[1]) * '-' * score_str(norm(opt.gradient)) *
-    '-' * string(id) * ".txt"
+    rktk_score_str(opt) * '-' * string(id) * ".txt"
+
+numstr(x)::String = @sprintf("%#-18.12g", BigFloat(x))
+shortstr(x)::String = @sprintf("%#.5g", BigFloat(x))
 
 function print_help()::Nothing
     say("Usage: julia RKTK.jl <command> [parameters...]")
@@ -337,14 +347,11 @@ function refine(::Type{T}, id::RKTKID, filename::String) where {T <: Real}
     end
 end
 
-score_str(opt::RKOCBFGSOptimizer{T}) where {T <: Real} =
-    score_str(opt.objective[1]) * '-' * score_str(norm(opt.gradient))
-
 function clean(::Type{T}) where {T <: Real}
     setprecision(approx_precision(T))
     optimizers = Tuple{Int,RKTKID,RKOCBFGSOptimizer{T}}[]
     for filename in readdir()
-        if match(RKTK_FILENAME_REGEX, filename) != nothing
+        if match(RKTKID_REGEX, filename) != nothing
             id = find_rktkid(filename)
             optimizer, header = rkoc_optimizer(T, id, filename)
             if precision(BigFloat) < parse(Int, header[2])
@@ -363,11 +370,11 @@ function clean(::Type{T}) where {T <: Real}
         completed = zeros(Bool, num_optimizers)
         @threads for i = 1 : num_optimizers
             _, id, optimizer = optimizers[i]
-            old_score = score_str(optimizer)
+            old_score = rktk_score_str(optimizer)
             start_iter = optimizer.iteration[1]
             completed[i] = run!(optimizer, id, UInt(2_000_000_000))
             stop_iter = optimizer.iteration[1]
-            new_score = score_str(optimizer)
+            new_score = rktk_score_str(optimizer)
             say(ifelse(completed[i], "    Cleaned ", "    Working "),
                 string(id), " (", stop_iter - start_iter, " iterations: ",
                 old_score, " => ", new_score, ") on thread ", threadid(), ".")
@@ -375,7 +382,9 @@ function clean(::Type{T}) where {T <: Real}
         next_optimizers = Tuple{Int,RKTKID,RKOCBFGSOptimizer{T}}[]
         for i = 1 : length(optimizers)
             if !completed[i]
-                push!(next_optimizers, optimizers[i])
+                _, id, optimizer = optimizers[i]
+                push!(next_optimizers,
+                    (log_score(optimizer.objective[1]), id, optimizer))
             end
         end
         if length(next_optimizers) == 0
