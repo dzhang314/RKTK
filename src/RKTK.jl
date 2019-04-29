@@ -11,7 +11,7 @@ flush(stdout)
 
 ################################################################################
 
-# using Base.Threads: @threads, nthreads, threadid
+using Base.Threads: @threads, nthreads, threadid
 using Printf: @sprintf
 using Statistics: mean, std
 using UUIDs: UUID, uuid4
@@ -341,6 +341,7 @@ score_str(opt::RKOCBFGSOptimizer{T}) where {T <: Real} =
     score_str(opt.objective[1]) * '-' * score_str(norm(opt.gradient))
 
 function clean(::Type{T}) where {T <: Real}
+    setprecision(approx_precision(T))
     optimizers = Tuple{Int,RKTKID,RKOCBFGSOptimizer{T}}[]
     for filename in readdir()
         if match(RKTK_FILENAME_REGEX, filename) != nothing
@@ -357,18 +358,19 @@ function clean(::Type{T}) where {T <: Real}
     end
     say("Found ", length(optimizers), " RKTK files.")
     while true
+        num_optimizers = length(optimizers)
         sort!(optimizers, by=(t -> t[1]), rev=true)
-        completed = zeros(Bool, length(optimizers))
-        for (i, (_, id, optimizer)) in enumerate(optimizers)
+        completed = zeros(Bool, num_optimizers)
+        @threads for i = 1 : num_optimizers
+            _, id, optimizer = optimizers[i]
             old_score = score_str(optimizer)
-            rmk("Cleaning ", string(id), " ($old_score)...")
             start_iter = optimizer.iteration[1]
-            completed[i] = run!(optimizer, id, UInt(1_000_000_000))
+            completed[i] = run!(optimizer, id, UInt(2_000_000_000))
             stop_iter = optimizer.iteration[1]
             new_score = score_str(optimizer)
             say(ifelse(completed[i], "    Cleaned ", "    Working "),
                 string(id), " (", stop_iter - start_iter, " iterations: ",
-                old_score, " => ", new_score, ").")
+                old_score, " => ", new_score, ") on thread ", threadid(), ".")
         end
         next_optimizers = Tuple{Int,RKTKID,RKOCBFGSOptimizer{T}}[]
         for i = 1 : length(optimizers)

@@ -7,23 +7,30 @@ export rmk, say, dbl, scale, integer_partitions,
     dot, identity_matrix!,
     asm_lines, asm_calls, view_asm
 
+using Base.Threads: lock, unlock, SpinLock
 using InteractiveUtils: _dump_function
 
 ################################################################################
 
+const DZMISC_STDOUT_LOCK = SpinLock()
+
 function rmk(args...; verbose::Bool=true)::Nothing
     if verbose
+        lock(DZMISC_STDOUT_LOCK)
         print("\33[2K\r")
         print(args...)
         flush(stdout)
+        unlock(DZMISC_STDOUT_LOCK)
     end
 end
 
 function say(args...; verbose::Bool=true)::Nothing
     if verbose
+        lock(DZMISC_STDOUT_LOCK)
         print("\33[2K\r")
         println(args...)
         flush(stdout)
+        unlock(DZMISC_STDOUT_LOCK)
     end
 end
 
