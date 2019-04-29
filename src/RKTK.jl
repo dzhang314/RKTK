@@ -11,6 +11,7 @@ flush(stdout)
 
 ################################################################################
 
+# using Base.Threads: @threads, nthreads, threadid
 using Printf: @sprintf
 using Statistics: mean, std
 using UUIDs: UUID, uuid4
@@ -33,8 +34,11 @@ function precision_type(prec::Int)::Type
     elseif prec <= 384; Float64x6
     elseif prec <= 448; Float64x7
     elseif prec <= 512; Float64x8
-    else;               BigFloat
-end end
+    else
+        setprecision(prec)
+        BigFloat
+    end
+end
 
 approx_precision(::Type{Float32  }) = 32
 approx_precision(::Type{Float64  }) = 64
@@ -134,6 +138,7 @@ function print_help()::Nothing
     say()
     say("RKTK provides the following <command> options:")
     say("    search <order> <num-stages> <precision>")
+    say("    refine <rktk-id> <precision>")
     say()
 end
 
@@ -178,6 +183,16 @@ function rkoc_optimizer(::Type{T}, order::Int, num_stages::Int,
     opt = BFGSOptimizer(T.(x_init), inv(T(1_000_000)), obj_func, grad_func)
     opt.iteration[1] = num_iters
     opt
+end
+
+function rkoc_optimizer(::Type{T}, id::RKTKID,
+                        filename::String) where {T <: Real}
+    trajectory = filter(!isempty, strip.(split(read(filename, String), "\n\n")))
+    point_data = filter(!isempty, strip.(split(trajectory[end], '\n')))
+    header = split(point_data[1])
+    x_init = BigFloat.(point_data[2:end])
+    num_iters = parse(Int, header[1])
+    rkoc_optimizer(T, id.order, id.num_stages, x_init, num_iters), header
 end
 
 ################################################################################
@@ -239,6 +254,24 @@ function run!(opt::RKOCBFGSOptimizer{T}, id::RKTKID) where {T <: Real}
     end
 end
 
+function run!(opt::RKOCBFGSOptimizer{T}, id::RKTKID,
+              duration_ns::UInt) where {T <: Real}
+    save_to_file(opt, id)
+    start_time = last_save_time = time_ns()
+    while true
+        _, objective_decreased = step!(opt)
+        current_time = time_ns()
+        if (!objective_decreased) || (current_time - start_time > duration_ns)
+            save_to_file(opt, id)
+            return !objective_decreased
+        end
+        if current_time - last_save_time > UInt(60_000_000_000)
+            save_to_file(opt, id)
+            last_save_time = current_time
+        end
+    end
+end
+
 ################################################################################
 
 function search(::Type{T}, id::RKTKID) where {T <: Real}
@@ -251,18 +284,48 @@ function search(::Type{T}, id::RKTKID) where {T <: Real}
     say("\nCompleted $(type_name(T)) search $(string(id)).\n")
 end
 
+# function multisearch(::Type{T}, order::Int, num_stages::Int) where {T <: Real}
+#     num_threads = nthreads()
+#     num_opts = num_threads - 1
+#     num_vars = div(num_stages * (num_stages + 1), 2)
+#     say("Constructing optimizers...")
+#     optimizers = [rkoc_optimizer(
+#             T, order, num_stages, rand(BigFloat, num_vars), 0)
+#         for _ = 1 : num_opts]
+#     bfgs_used = zeros(Bool, num_opts)
+#     objective_decreased = zeros(Bool, num_opts)
+#     for i = 1 : num_opts
+#         print_table_row(optimizers[i], "NONE")
+#         bfgs_used[i], objective_decreased[i] = step!(optimizers[i])
+#     end
+#     @threads for i = 1 : num_threads
+#         if i <= num_opts
+#             while true
+#                 bfgs_used[i], objective_decreased[i] = step!(optimizers[i])
+#             end
+#         else
+#             while true
+#                 for i = 1 : num_opts
+#                     print("\033[F")
+#                 end
+#                 for i = 1 : num_opts
+#                     print_table_row(optimizers[i],
+#                         ifelse(objective_decreased[i],
+#                             ifelse(bfgs_used[i], "BFGS", "GRAD"), "DONE"))
+#                 end
+
+#             end
+#         end
+#     end
+# end
+
 function refine(::Type{T}, id::RKTKID, filename::String) where {T <: Real}
     setprecision(approx_precision(T))
     say("Running ", T, " refinement $(string(id)).\n")
-    trajectory = filter(!isempty, strip.(split(read(filename, String), "\n\n")))
-    point_data = filter(!isempty, strip.(split(trajectory[end], '\n')))
-    header = split(point_data[1])
-    old_prec = parse(Int, header[2])
-    if precision(BigFloat) < old_prec
+    optimizer, header = rkoc_optimizer(T, id, filename)
+    if precision(BigFloat) < parse(Int, header[2])
         say("WARNING: Refining at lower precision than source file.\n")
     end
-    optimizer = rkoc_optimizer(T, id.order, id.num_stages,
-        BigFloat.(point_data[2:end]), parse(Int, header[1]))
     starting_iteration = optimizer.iteration[1]
     run!(optimizer, id)
     ending_iteration = optimizer.iteration[1]
@@ -271,6 +334,54 @@ function refine(::Type{T}, id::RKTKID, filename::String) where {T <: Real}
         refine(T, id, find_filename_by_id(".", id))
     else
         say("\nCompleted $(type_name(T)) refinement $(string(id)).\n")
+    end
+end
+
+score_str(opt::RKOCBFGSOptimizer{T}) where {T <: Real} =
+    score_str(opt.objective[1]) * '-' * score_str(norm(opt.gradient))
+
+function clean(::Type{T}) where {T <: Real}
+    optimizers = Tuple{Int,RKTKID,RKOCBFGSOptimizer{T}}[]
+    for filename in readdir()
+        if match(RKTK_FILENAME_REGEX, filename) != nothing
+            id = find_rktkid(filename)
+            optimizer, header = rkoc_optimizer(T, id, filename)
+            if precision(BigFloat) < parse(Int, header[2])
+                say("ERROR: Cleaning at lower precision than source file \"",
+                    filename, "\".")
+                exit()
+            end
+            push!(optimizers,
+                (log_score(optimizer.objective[1]), id, optimizer))
+        end
+    end
+    say("Found ", length(optimizers), " RKTK files.")
+    while true
+        sort!(optimizers, by=(t -> t[1]), rev=true)
+        completed = zeros(Bool, length(optimizers))
+        for (i, (_, id, optimizer)) in enumerate(optimizers)
+            old_score = score_str(optimizer)
+            rmk("Cleaning ", string(id), " ($old_score)...")
+            start_iter = optimizer.iteration[1]
+            completed[i] = run!(optimizer, id, UInt(1_000_000_000))
+            stop_iter = optimizer.iteration[1]
+            new_score = score_str(optimizer)
+            say(ifelse(completed[i], "    Cleaned ", "    Working "),
+                string(id), " (", stop_iter - start_iter, " iterations: ",
+                old_score, " => ", new_score, ").")
+        end
+        next_optimizers = Tuple{Int,RKTKID,RKOCBFGSOptimizer{T}}[]
+        for i = 1 : length(optimizers)
+            if !completed[i]
+                push!(next_optimizers, optimizers[i])
+            end
+        end
+        if length(next_optimizers) == 0
+            say("All RKTK files cleaned!")
+            break
+        end
+        optimizers = next_optimizers
+        say(length(optimizers), " RKTK files remaining.")
     end
 end
 
@@ -343,15 +454,22 @@ end
 
 function main()
 
-    if (length(ARGS) == 0) || ("-h" in ARGS) || ("--help" in ARGS)
+    if (length(ARGS) == 0) || ("-h" in ARGS) || ("--help" in ARGS) let
         print_help()
-    elseif uppercase(ARGS[1]) == "SEARCH"
+
+    end elseif uppercase(ARGS[1]) == "SEARCH" let
         order, num_stages = get_order(2), get_num_stages(3)
         prec = parse(Int, ARGS[4])
         while true
             search(precision_type(prec), RKTKID(order, num_stages, uuid4()))
         end
-    elseif uppercase(ARGS[1]) == "REFINE"
+
+    # end elseif uppercase(ARGS[1]) == "MULTISEARCH" let
+    #     order, num_stages = get_order(2), get_num_stages(3)
+    #     prec = parse(Int, ARGS[4])
+    #     multisearch(precision_type(prec), order, num_stages)
+
+    end elseif uppercase(ARGS[1]) == "REFINE" let
         id = find_rktkid(ARGS[2])
         if id == nothing
             say("ERROR: Invalid RKTK ID ", ARGS[2], ".")
@@ -366,14 +484,12 @@ function main()
         end
         prec = parse(Int, ARGS[3])
         refine(precision_type(prec), id, filename)
-    elseif uppercase(ARGS[1]) == "CLEAN"
+
+    end elseif uppercase(ARGS[1]) == "CLEAN" let
         prec = parse(Int, ARGS[2])
-        for filename in reverse(readdir())
-            if match(RKTK_FILENAME_REGEX, filename) != nothing
-                refine(precision_type(prec), find_rktkid(filename), filename)
-            end
-        end
-    elseif uppercase(ARGS[1]) == "BENCHMARK"
+        clean(precision_type(prec))
+
+    end elseif uppercase(ARGS[1]) == "BENCHMARK" let
         order, num_stages = get_order(2), get_num_stages(3)
         benchmark_secs = parse(Float64, ARGS[4])
         num_trials = parse(Int, ARGS[5])
@@ -387,10 +503,12 @@ function main()
             benchmark(BigFloat, order, num_stages, benchmark_secs, num_trials)
         end
         say()
-    else
-        say("ERROR: Unrecognized <command> option ", ARGS[1], ".\n")
+
+    end else let
+        say("ERROR: Unrecognized <command> option \"", ARGS[1], "\".\n")
         print_help()
-    end
+
+    end end
 end
 
 main()
