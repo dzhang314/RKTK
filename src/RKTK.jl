@@ -51,16 +51,17 @@ approx_precision(::Type{Float64x7}) = 448
 approx_precision(::Type{Float64x8}) = 512
 approx_precision(::Type{BigFloat }) = precision(BigFloat)
 
-type_name(::Type{Float32  }) = "Float32"
-type_name(::Type{Float64  }) = "Float64"
-type_name(::Type{Float64x2}) = "Float64x2"
-type_name(::Type{Float64x3}) = "Float64x3"
-type_name(::Type{Float64x4}) = "Float64x4"
-type_name(::Type{Float64x5}) = "Float64x5"
-type_name(::Type{Float64x6}) = "Float64x6"
-type_name(::Type{Float64x7}) = "Float64x7"
-type_name(::Type{Float64x8}) = "Float64x8"
-type_name(::Type{BigFloat }) = "BigFloat(" * string(precision(BigFloat)) * ')'
+function Base.show(io::IO,
+        ::Type{MultiprecisionFloats.MultiFloat64{N}}) where {N}
+    write(io, "Float64x")
+    show(io, N)
+end
+
+function Base.show(io::IO, ::Type{BigFloat})
+    write(io, "BigFloat(")
+    show(io, precision(BigFloat))
+    write(io, ')')
+end
 
 ################################################################################
 
@@ -74,9 +75,13 @@ struct RKTKID
     uuid::UUID
 end
 
-Base.string(id::RKTKID) = "RKTK-" *
-    lpad(id.order, 2, '0') * lpad(id.num_stages, 2, '0') * '-' *
-    uppercase(string(id.uuid))
+function Base.show(io::IO, id::RKTKID)
+    write(io, "RKTK-")
+    write(io, lpad(id.order, 2, '0'))
+    write(io, lpad(id.num_stages, 2, '0'))
+    write(io, '-')
+    write(io, uppercase(string(id.uuid)))
+end
 
 const RKTKID_REGEX = Regex(
     "RKTK-([0-9]{2})([0-9]{2})-([0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-" *
@@ -101,8 +106,7 @@ function find_filename_by_id(dir::String, id::RKTKID)::Union{String,Nothing}
         if ((m != nothing) && (parse(Int, m[1]) == id.order) &&
                 (parse(Int, m[2]) == id.num_stages) && (UUID(m[3]) == id.uuid))
             if result != nothing
-                say("ERROR: Found multiple files with RKTK ID ",
-                    string(id), ".")
+                say("ERROR: Found multiple files with RKTK ID $id.")
                 exit()
             else
                 result = filename
@@ -289,9 +293,9 @@ function search(::Type{T}, id::RKTKID) where {T <: Real}
     num_vars = div(id.num_stages * (id.num_stages + 1), 2)
     optimizer = rkoc_optimizer(T, id.order, id.num_stages,
         rand(BigFloat, num_vars), 0)
-    say("Running $(type_name(T)) search $(string(id)).\n")
+    say("Running $T search $id.\n")
     run!(optimizer, id)
-    say("\nCompleted $(type_name(T)) search $(string(id)).\n")
+    say("\nCompleted $T search $id.\n")
 end
 
 # function multisearch(::Type{T}, order::Int, num_stages::Int) where {T <: Real}
@@ -331,7 +335,7 @@ end
 
 function refine(::Type{T}, id::RKTKID, filename::String) where {T <: Real}
     setprecision(approx_precision(T))
-    say("Running ", T, " refinement $(string(id)).\n")
+    say("Running ", T, " refinement $id.\n")
     optimizer, header = rkoc_optimizer(T, id, filename)
     if precision(BigFloat) < parse(Int, header[2])
         say("WARNING: Refining at lower precision than source file.\n")
@@ -340,10 +344,10 @@ function refine(::Type{T}, id::RKTKID, filename::String) where {T <: Real}
     run!(optimizer, id)
     ending_iteration = optimizer.iteration[1]
     if ending_iteration > starting_iteration
-        say("\nRepeating $(type_name(T)) refinement $(string(id)).\n")
+        say("\nRepeating $T refinement $id.\n")
         refine(T, id, find_filename_by_id(".", id))
     else
-        say("\nCompleted $(type_name(T)) refinement $(string(id)).\n")
+        say("\nCompleted $T refinement $id.\n")
     end
 end
 
@@ -376,7 +380,7 @@ function clean(::Type{T}) where {T <: Real}
             stop_iter = optimizer.iteration[1]
             new_score = rktk_score_str(optimizer)
             say(ifelse(completed[i], "    Cleaned ", "    Working "),
-                string(id), " (", stop_iter - start_iter, " iterations: ",
+                id, " (", stop_iter - start_iter, " iterations: ",
                 old_score, " => ", new_score, ") on thread ", threadid(), ".")
         end
         next_optimizers = Tuple{Int,RKTKID,RKOCBFGSOptimizer{T}}[]
@@ -432,12 +436,11 @@ function benchmark(::Type{T}, order::Int, num_stages::Int,
         end
     end
     if success
-        say(rpad("$(type_name(T)): ", 16, ' '),
+        say(rpad("$T: ", 16, ' '),
             shortstr(mean(iteration_counts)), " ± ",
             shortstr(std(iteration_counts)))
     else
-        say(rpad("$(type_name(T)): ", 16, ' '),
-            "Search terminated too early")
+        say(rpad("$T: ", 16, ' '), "Search terminated too early")
     end
 end
 
@@ -490,7 +493,7 @@ function main()
         end
         filename = find_filename_by_id(".", id)
         if filename == nothing
-            say("ERROR: No file exists with RKTK ID ", string(id), ".\n")
+            say("ERROR: No file exists with RKTK ID $id.\n")
             exit()
         end
         prec = parse(Int, ARGS[3])
