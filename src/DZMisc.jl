@@ -350,12 +350,14 @@ const IGNORED_PREFIXES = ["julia_throw_complex_domainerror_"]
 
 function asm_calls(@nospecialize(func), @nospecialize(types))
     calls = Set{String}()
-    for line in asm_lines(func, types) if "offset" in line
+    for line in asm_lines(func, types)
+        if "offset" in line
             call = line[end]
             ignored = (call in IGNORED_CALLS) || any(
                 startswith(call, prefix) for prefix in IGNORED_PREFIXES)
             if !ignored; push!(calls, call); end
-    end end
+        end
+    end
     calls
 end
 
