@@ -52,8 +52,7 @@ approx_precision(::Type{Float64x7}) = 448
 approx_precision(::Type{Float64x8}) = 512
 approx_precision(::Type{BigFloat }) = precision(BigFloat)
 
-function Base.show(io::IO,
-        ::Type{MultiFloat{Float64,N}}) where {N}
+function Base.show(io::IO, ::Type{MultiFloat{Float64,N}}) where {N}
     write(io, "Float64x")
     show(io, N)
 end
@@ -121,17 +120,17 @@ end
 
 function log_score(x)::Int
     bx = BigFloat(x)
-    if     iszero(bx);   typemax(Int)
+    if     iszero(bx)  ; typemax(Int)
     elseif isfinite(bx); round(Int, -100 * log10(bx))
-    else;                0
+    else               ; 0
     end
 end
 
 function scaled_log_score(x)
     bx = BigFloat(x)
-    if     iszero(bx);   typemax(Int)
+    if     iszero(bx)  ; typemax(Int)
     elseif isfinite(bx); round(Int, 10000 - 3333 * log10(bx) / 2)
-    else;                0
+    else               ; 0
     end
 end
 
@@ -242,6 +241,8 @@ function save_to_file(opt::RKOCBFGSOptimizer{T}, id::RKTKID) where {T <: Real}
     rmk("Save complete.")
 end
 
+const TERM = isa(stdout, Base.TTY)
+
 function run!(opt::RKOCBFGSOptimizer{T}, id::RKTKID) where {T <: Real}
     print_table_header()
     print_table_row(opt, "NONE")
@@ -262,7 +263,7 @@ function run!(opt::RKOCBFGSOptimizer{T}, id::RKTKID) where {T <: Real}
         if !bfgs_used
             print_table_row(opt, "GRAD")
             last_print_time = current_time
-        elseif current_time - last_print_time > UInt(80_000_000)
+        elseif TERM && (current_time - last_print_time > UInt(80_000_000))
             rmk_table_row(opt, "BFGS")
             last_print_time = current_time
         end
@@ -530,38 +531,6 @@ main()
 
 # const AccurateReal = Float64x4
 # const THRESHOLD = AccurateReal(1e-40)
-
-# function constrain(x::Vector{T}, evaluator::RKOCEvaluator{T}) where {T <: Real}
-#     x_old, obj_old = x, norm2(evaluator(x))
-#     while true
-#         direction = qr(evaluator'(x_old)) \ evaluator(x_old)
-#         x_new = x_old - direction
-#         obj_new = norm2(evaluator(x_new))
-#         if obj_new < obj_old
-#             x_old, obj_old = x_new, obj_new
-#         else
-#             break
-#         end
-#     end
-#     x_old, obj_old
-# end
-
-# function compute_order(x::Vector{T}, threshold::T) where {T <: Real}
-#     num_stages = compute_stages(x)
-#     order = 2
-#     while true
-#         rmk("    Testing constraints for order ", order, "...")
-#         x_new, obj_new = constrain(x,
-#             RKOCEvaluator{AccurateReal}(order, num_stages))
-#         if obj_new <= threshold^2
-#             x = x_new
-#             order += 1
-#         else
-#             break
-#         end
-#     end
-#     x, order - 1
-# end
 
 # function drop_last_stage(x::Vector{T}) where {T <: Real}
 #     num_stages = compute_stages(x)
