@@ -16,11 +16,12 @@ using Printf: @sprintf
 using Statistics: mean, std
 using UUIDs: UUID, uuid4
 
+using MultiFloats
+using RungeKuttaToolKit
+
 push!(LOAD_PATH, @__DIR__)
 using DZMisc
 using DZOptimization
-using MultiprecisionFloats
-using RKTK2
 
 ################################################################################
 
@@ -52,7 +53,7 @@ approx_precision(::Type{Float64x8}) = 512
 approx_precision(::Type{BigFloat }) = precision(BigFloat)
 
 function Base.show(io::IO,
-        ::Type{MultiprecisionFloats.MultiFloat64{N}}) where {N}
+        ::Type{MultiFloat{Float64,N}}) where {N}
     write(io, "Float64x")
     show(io, N)
 end

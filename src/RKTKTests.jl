@@ -1,11 +1,12 @@
 using Base: gc_alloc_count
 using Test
 
+using MultiFloats
+using RungeKuttaToolKit
+
 push!(LOAD_PATH, @__DIR__)
-using RKTK2
-using DZMisc
 using DZOptimization
-using MultiprecisionFloats
+using DZMisc
 
 ################################################################################
 
@@ -71,9 +72,9 @@ end
     test_asm_calls(populate_explicit!, :(Matrix{_}, Vector{_}, Vector{_}, Int))
     test_asm_calls(populate_explicit!, :(Vector{_}, Matrix{_}, Vector{_}, Int))
     add_safe_function!("populate_explicit!")
-    test_asm_calls(RKTK2.compute_butcher_weights!,
+    test_asm_calls(RungeKuttaToolKit.compute_butcher_weights!,
         :(Matrix{_}, Matrix{_}, Vector{Vector{Int}}))
-    test_asm_calls(RKTK2.backprop_butcher_weights!,
+    test_asm_calls(RungeKuttaToolKit.backprop_butcher_weights!,
         :(Matrix{_}, Matrix{_}, Vector{_}, Matrix{_}, Vector{_},
             Vector{Int}, Vector{Vector{Tuple{Int,Int}}}))
     add_safe_function!("compute_butcher_weights!")
@@ -143,9 +144,9 @@ end
 function run_rksolver(::Type{T}, method, n::Int) where {T <: Real}
     y0 = T[2, 0]
     h = T(2000) / T(10000000)
-    sol = RKSolver{T}(method(T), 2)
+    sol = RungeKuttaToolKit.RKSolver{T}(method(T), 2)
     for _ = 1 : n
-        runge_kutta_step!(vdpol!, y0, h, sol)
+        RungeKuttaToolKit.runge_kutta_step!(vdpol!, y0, h, sol)
     end
     y0
 end
@@ -163,6 +164,7 @@ function test_rksolver(::Type{T}, method, n::Int) where {T <: Real}
     @test gc_alloc_count(gc_diff) < 100
 end
 
+using RungeKuttaToolKit.ExampleMethods
 @test_block "RKSolver performance" begin
     test_rksolver(Float32, rk4_table,   100000)
     test_rksolver(Float64, rk4_table,   100000)
