@@ -23,6 +23,9 @@ push!(LOAD_PATH, @__DIR__)
 using DZMisc
 using DZOptimization
 
+set_zero_denormals(true)
+use_very_sloppy_multifloat_arithmetic()
+
 ################################################################################
 
 function precision_type(prec::Int)::Type
@@ -378,7 +381,7 @@ function clean(::Type{T}) where {T <: Real}
             _, id, optimizer = optimizers[i]
             old_score = rktk_score_str(optimizer)
             start_iter = optimizer.iteration[1]
-            completed[i] = run!(optimizer, id, UInt(2_000_000_000))
+            completed[i] = run!(optimizer, id, UInt(10_000_000_000))
             stop_iter = optimizer.iteration[1]
             new_score = rktk_score_str(optimizer)
             say(ifelse(completed[i], "    Cleaned ", "    Working "),
