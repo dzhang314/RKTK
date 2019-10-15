@@ -23,7 +23,7 @@ push!(LOAD_PATH, @__DIR__)
 using DZMisc
 using DZOptimization
 
-set_zero_denormals(true)
+set_zero_subnormals(true)
 use_very_sloppy_multifloat_arithmetic()
 
 ################################################################################
