@@ -1,12 +1,23 @@
 using Base: gc_alloc_count
 using Test
 
+using AssemblyView
+using DZLinearAlgebra
+using DZOptimization
 using MultiFloats
 using RungeKuttaToolKit
 
-push!(LOAD_PATH, @__DIR__)
-using DZOptimization
-using DZMisc
+function rmk(args...)::Nothing
+    print("\33[2K\r")
+    print(args...)
+    flush(stdout)
+end
+
+function say(args...)::Nothing
+    print("\33[2K\r")
+    println(args...)
+    flush(stdout)
+end
 
 ################################################################################
 
@@ -35,7 +46,7 @@ function test_asm_calls(@nospecialize(func), type_template::Expr)
     for T in (:Float32, :Float64, :Float64x2, :Float64x4, :Float64x8)
         rmk("    ", rpad(func, 40, ' '), ": ", T)
         types = eval(replace_underscores(type_template, T))
-        for call in asm_calls(func, types)
+        for call in asm_offsets(func, types)
             if !is_safe(call)
                 say("\nCOMPILATION TEST FAILURE:")
                 say("Unsafe function call <", call,
@@ -57,13 +68,9 @@ say()
 ################################################################################
 
 @test_block "DZMisc compilation" begin
-    test_asm_calls(orthonormalize_columns!, :(Matrix{_},))
     test_asm_calls(norm, :(Vector{_},))
     test_asm_calls(norm2, :(Vector{_},))
     test_asm_calls(normalize!, :(Vector{_},))
-    test_asm_calls(approx_norm, :(Vector{_},))
-    test_asm_calls(approx_norm2, :(Vector{_},))
-    test_asm_calls(approx_normalize!, :(Vector{_},))
     test_asm_calls(dot, :(Vector{_}, Vector{_}))
     test_asm_calls(identity_matrix!, :(Matrix{_},))
 end
@@ -73,7 +80,9 @@ end
     test_asm_calls(populate_explicit!, :(Vector{_}, Matrix{_}, Vector{_}, Int))
     add_safe_function!("populate_explicit!")
     test_asm_calls(RungeKuttaToolKit.compute_butcher_weights!,
-        :(Matrix{_}, Matrix{_}, Vector{Vector{Int}}))
+        :(Matrix{_}, Matrix{_}, Vector{Pair{Int,Int}}))
+    add_safe_function!("jl_throw")
+    add_safe_function!("jl_system_image_data")
     test_asm_calls(RungeKuttaToolKit.backprop_butcher_weights!,
         :(Matrix{_}, Matrix{_}, Vector{_}, Matrix{_}, Vector{_},
             Vector{Int}, Vector{Vector{Tuple{Int,Int}}}))
@@ -113,8 +122,7 @@ function do_f64x8_ops(a::Vector{Float64x8}, b::Vector{Float64x8}, n::Int)
     @simd ivdep for i = 1 : n
         @inbounds a[i] = b[i] * b[i] + b[i] * b[i]
     end
-    @inbounds [Float64((a[i] - 2.0 * i) + 0.0 + 0.0 + 0.0 + 0.0
-                                        + 0.0 + 0.0 + 0.0 + 0.0) for i = 1 : n]
+    @inbounds [Float64(abs(a[i] - 2.0 * i)) for i = 1 : n]
 end
 
 function test_f64x8_ops(n::Int)
@@ -215,7 +223,8 @@ function test_backprop_evaluator()
     @test gc_alloc_count(gc_diff) == 0
     @test Float64(result) == Float64(sum(residual.^2))
 
-    g1 = dbl.(jacobian' * residual)
+    g1 = jacobian' * residual
+    g1 += g1
     g2 = vcat([gA[i,j] for i = 2 : 16 for j = 1 : i-1], gb)
     for (x1, x2) in zip(g1, g2)
         @test Float64(x1) == Float64(x2)

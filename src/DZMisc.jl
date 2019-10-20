@@ -1,11 +1,6 @@
 module DZMisc
 
-export rmk, say, dbl, scale, integer_partitions,
-    RootedTree, rooted_trees, rooted_tree_count, butcher_density,
-    orthonormalize_columns!, linearly_independent_column_indices!,
-    norm, norm2, normalize!, approx_norm, approx_norm2, approx_normalize!,
-    dot, identity_matrix!,
-    asm_lines, asm_calls, view_asm
+export rmk, say, orthonormalize_columns!, linearly_independent_column_indices!
 
 using Base.Threads: lock, unlock, SpinLock
 using InteractiveUtils: _dump_function
@@ -32,16 +27,6 @@ function say(args...; verbose::Bool=true)::Nothing
         flush(stdout)
         unlock(DZMISC_STDOUT_LOCK)
     end
-end
-
-################################################################################
-
-@inline function dbl(x::T)::T where {T <: Number}
-    x + x
-end
-
-@inline function scale(a::Float64, x::T)::T where {T <: Number}
-    a * x
 end
 
 ################################################################################
@@ -129,108 +114,6 @@ function linearly_independent_column_indices!(
 end
 
 ################################################################################
-
-@inline function norm2(x::Vector{T})::T where {T <: Number}
-    result = zero(float(real(T)))
-    @simd for i = 1 : length(x)
-        @inbounds result += abs2(x[i])
-    end
-    result
-end
-
-@inline function norm(x::Vector{T})::T where {T <: Number}
-    sqrt(norm2(x))
-end
-
-@inline function normalize!(x::Vector{T})::Nothing where {T <: Number}
-    a = inv(norm(x))
-    @simd ivdep for i = 1 : length(x)
-        @inbounds x[i] *= a
-    end
-end
-
-################################################################################
-
-@inline function approx_norm2(x::Vector{T})::Float64 where {T <: Number}
-    result = zero(Float64)
-    @simd for i = 1 : length(x)
-        @inbounds result += abs2(Float64(x[i]))
-    end
-    result
-end
-
-@inline function approx_norm(x::Vector{T})::Float64 where {T <: Number}
-    sqrt(approx_norm2(x))
-end
-
-@inline function approx_normalize!(x::Vector{T})::Nothing where {T <: Number}
-    a = inv(approx_norm(x))
-    @simd ivdep for i = 1 : length(x)
-        @inbounds x[i] *= a
-    end
-end
-
-################################################################################
-
-@inline function dot(v::Vector{T}, w::Vector{T})::T where {T <: Real}
-    result = zero(T)
-    @simd ivdep for i = 1 : length(v)
-        @inbounds result += v[i] * w[i]
-    end
-    result
-end
-
-@inline function identity_matrix!(A::Matrix{T})::Nothing where {T <: Number}
-    m, n = size(A, 1), size(A, 2)
-    for j = 1 : n
-        @simd ivdep for i = 1 : m
-            @inbounds A[i,j] = T(i == j)
-        end
-    end
-end
-
-################################################################################
-
-function asm_lines(@nospecialize(func), @nospecialize(types))
-    # Note: _dump_function is an undocumented internal function that might
-    # be changed or removed in future versions of Julia. This function is
-    # only intended for interactive educational use.
-    lines = split.(split(_dump_function(func, types,
-        true,   # Generate native code (as opposed to LLVM IR).
-        false,  # Don't generate wrapper code.
-        true,   # This parameter (strip_ir_metadata) is ignored when dumping native code.
-        true,   # This parameter (dump_module) is ignored when dumping native code.
-        :intel, # I prefer Intel assembly syntax.
-        true,   # This parameter (optimize) is ignored when dumping native code.
-        :source # TODO: What does debuginfo=:source mean?
-    ), '\n'))
-    # I've dug through the Julia source code to try to determine the meaning
-    # of the final parameter (debuginfo) of _dump_function, but it's hidden
-    # behind more layers than I'd like to look (passed down into native code).
-    # In the simple cases I've tested, it doesn't seem to make a difference.
-
-    # Strip all empty lines and comments.
-    filter!(line -> length(line) > 0 && !startswith(line[1], ';'), lines)
-    return lines
-end
-
-
-const IGNORED_CALLS = ["jl_system_image_data", "jl_throw",
-    "throw_complex_domainerror", "throw_overflowerr_binaryop"]
-const IGNORED_PREFIXES = ["julia_throw_complex_domainerror_"]
-
-function asm_calls(@nospecialize(func), @nospecialize(types))
-    calls = Set{String}()
-    for line in asm_lines(func, types)
-        if "offset" in line
-            call = line[end]
-            ignored = (call in IGNORED_CALLS) || any(
-                startswith(call, prefix) for prefix in IGNORED_PREFIXES)
-            if !ignored; push!(calls, call); end
-        end
-    end
-    calls
-end
 
 const MOV_TYPES = ["mov", "movabs", "vmovaps", "vmovups", "vmovapd", "vmovupd"]
 const JUMP_TYPES = ["je", "jne", "ja", "jae", "jb", "jbe",
