@@ -81,11 +81,9 @@ end
     add_safe_function!("populate_explicit!")
     test_asm_calls(RungeKuttaToolKit.compute_butcher_weights!,
         :(Matrix{_}, Matrix{_}, Vector{Pair{Int,Int}}))
-    add_safe_function!("jl_throw")
-    add_safe_function!("jl_system_image_data")
     test_asm_calls(RungeKuttaToolKit.backprop_butcher_weights!,
         :(Matrix{_}, Matrix{_}, Vector{_}, Matrix{_}, Vector{_},
-            Vector{Int}, Vector{Vector{Tuple{Int,Int}}}))
+            Vector{Int}, Vector{Tuple{Int,Int}}, Vector{Pair{Int,Int}}))
     add_safe_function!("compute_butcher_weights!")
     add_safe_function!("backprop_butcher_weights!")
     test_asm_calls(evaluate_residual2,
