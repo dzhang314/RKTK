@@ -39,6 +39,8 @@ replace_underscores(expr::Expr, t::Symbol) = Expr(
 
 replace_underscores(sym::Symbol, t::Symbol) = (sym == :_) ? t : sym
 
+replace_underscores(n::Int, t::Symbol) = n
+
 replace_underscores(qn::QuoteNode, t::Symbol) =
     QuoteNode(replace_underscores(qn.value, t))
 
@@ -46,6 +48,7 @@ function test_asm_calls(@nospecialize(func), type_template::Expr)
     for T in (:Float32, :Float64, :Float64x2, :Float64x4, :Float64x8)
         rmk("    ", rpad(func, 40, ' '), ": ", T)
         types = eval(replace_underscores(type_template, T))
+        view_asm(IOBuffer(), func, types)
         for call in asm_offsets(func, types)
             if !is_safe(call)
                 say("\nCOMPILATION TEST FAILURE:")
@@ -99,7 +102,7 @@ end
         :(Matrix{_}, _, Vector{_}, Vector{_}, Vector{_}))
     test_asm_calls(DZOptimization.quadratic_line_search,
         :(DZOptimization.StepObjectiveFunctor{
-            RKOCExplicitBackpropObjectiveFunctor{_}, _}, _, _))
+            RKOCExplicitBackpropObjectiveFunctor{_}, _, 1}, _, _))
     add_safe_function!("update_inverse_hessian!")
     add_safe_function!("quadratic_line_search")
     test_asm_calls(step!,
