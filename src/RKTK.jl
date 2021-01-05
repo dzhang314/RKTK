@@ -25,7 +25,7 @@ push!(LOAD_PATH, @__DIR__)
 using DZMisc
 
 set_zero_subnormals(true)
-use_very_sloppy_multifloat_arithmetic()
+use_standard_multifloat_arithmetic()
 
 ################################################################################
 
@@ -142,7 +142,7 @@ score_str(x)::String = lpad(clamp(log_score(x), 0, 9999), 4, '0')
 scaled_score_str(x)::String = lpad(clamp(scaled_log_score(x), 0, 9999), 4, '0')
 
 rktk_score_str(opt::RKOCBFGSOptimizer{T}) where {T <: Real} =
-    score_str(opt.objective[1]) * '-' * score_str(norm(opt.gradient)) *
+    score_str(opt.current_objective_value[]) * '-' * score_str(norm(opt.current_gradient)) *
         '-' * scaled_score_str(norm(opt.current_point))
 
 rktk_filename(opt, id::RKTKID)::String =
@@ -182,12 +182,12 @@ function rmk_table_row(iter, obj_value, grad_norm,
 end
 
 function print_table_row(opt, type)::Nothing
-    print_table_row(opt.iteration[1], opt.objective[1], norm(opt.gradient),
+    print_table_row(opt.iteration_count[], opt.current_objective_value[], norm(opt.current_gradient),
                     opt.last_step_size[1], norm(opt.current_point), type)
 end
 
 function rmk_table_row(opt, type)::Nothing
-    rmk_table_row(opt.iteration[1], opt.objective[1], norm(opt.gradient),
+    rmk_table_row(opt.iteration_count[], opt.current_objective_value[], norm(opt.current_gradient),
                   opt.last_step_size[1], norm(opt.current_point), type)
 end
 
@@ -198,8 +198,8 @@ function rkoc_optimizer(::Type{T}, order::Int, num_stages::Int,
     obj_func, grad_func = rkoc_explicit_backprop_functors(T, order, num_stages)
     num_vars = div(num_stages * (num_stages + 1), 2)
     @assert length(x_init) == num_vars
-    opt = BFGSOptimizer(T.(x_init), inv(T(1_000_000)), obj_func, grad_func)
-    opt.iteration[1] = num_iters
+    opt = BFGSOptimizer(obj_func, grad_func, T.(x_init), inv(T(1_000_000)))
+    opt.iteration_count[] = num_iters
     opt
 end
 
@@ -229,14 +229,14 @@ function save_to_file(opt::RKOCBFGSOptimizer{T}, id::RKTKID) where {T <: Real}
         header = split(point_data[1])
         num_iters = parse(Int, header[1])
         prec = parse(Int, header[2])
-        if (precision(BigFloat) <= prec) && (opt.iteration[1] <= num_iters)
+        if (precision(BigFloat) <= prec) && (opt.iteration_count[] <= num_iters)
             rmk("No save necessary.")
             return
         end
     end
     file = open(filename, "a+")
-    println(file, opt.iteration[1], ' ', precision(BigFloat), ' ',
-            log_score(opt.objective[1]), ' ', log_score(norm(opt.gradient)))
+    println(file, opt.iteration_count[], ' ', precision(BigFloat), ' ',
+            log_score(opt.current_objective_value[]), ' ', log_score(norm(opt.current_gradient)))
     for x in opt.current_point
         println(file, BigFloat(x))
     end
@@ -253,8 +253,8 @@ function run!(opt::RKOCBFGSOptimizer{T}, id::RKTKID) where {T <: Real}
     save_to_file(opt, id)
     last_print_time = last_save_time = time_ns()
     while true
-        bfgs_used, objective_decreased = step!(opt)
-        if !objective_decreased
+        step!(opt)
+        if opt.has_converged[]
             print_table_row(opt, "DONE")
             save_to_file(opt, id)
             return
@@ -264,7 +264,7 @@ function run!(opt::RKOCBFGSOptimizer{T}, id::RKTKID) where {T <: Real}
             save_to_file(opt, id)
             last_save_time = current_time
         end
-        if !bfgs_used
+        if opt.last_step_type[] == DZOptimization.GradientDescentStep
             print_table_row(opt, "GRAD")
             last_print_time = current_time
         elseif TERM && (current_time - last_print_time > UInt(80_000_000))
@@ -346,9 +346,9 @@ function refine(::Type{T}, id::RKTKID, filename::String) where {T <: Real}
     if precision(BigFloat) < parse(Int, header[2])
         say("WARNING: Refining at lower precision than source file.\n")
     end
-    starting_iteration = optimizer.iteration[1]
+    starting_iteration = optimizer.iteration_count[]
     run!(optimizer, id)
-    ending_iteration = optimizer.iteration[1]
+    ending_iteration = optimizer.iteration_count[]
     if ending_iteration > starting_iteration
         say("\nRepeating $T refinement $id.\n")
         refine(T, id, find_filename_by_id(".", id))
@@ -370,7 +370,7 @@ function clean(::Type{T}) where {T <: Real}
                 exit()
             end
             push!(optimizers,
-                (log_score(optimizer.objective[1]), id, optimizer))
+                (log_score(optimizer.current_objective_value[]), id, optimizer))
         end
     end
     say("Found ", length(optimizers), " RKTK files.")
@@ -381,9 +381,9 @@ function clean(::Type{T}) where {T <: Real}
         @threads for i = 1 : num_optimizers
             _, id, optimizer = optimizers[i]
             old_score = rktk_score_str(optimizer)
-            start_iter = optimizer.iteration[1]
+            start_iter = optimizer.iteration_count[]
             completed[i] = run!(optimizer, id, UInt(10_000_000_000))
-            stop_iter = optimizer.iteration[1]
+            stop_iter = optimizer.iteration_count[]
             new_score = rktk_score_str(optimizer)
             say(ifelse(completed[i], "    Cleaned ", "    Working "),
                 id, " (", stop_iter - start_iter, " iterations: ",
@@ -394,7 +394,7 @@ function clean(::Type{T}) where {T <: Real}
             if !completed[i]
                 _, id, optimizer = optimizers[i]
                 push!(next_optimizers,
-                    (log_score(optimizer.objective[1]), id, optimizer))
+                    (log_score(optimizer.current_objective_value[]), id, optimizer))
             end
         end
         if length(next_optimizers) == 0
@@ -423,7 +423,7 @@ function benchmark(::Type{T}, order::Int, num_stages::Int,
             break
         end
     end
-    Int(start_ns - construction_ns), opt.iteration[1], terminated_early
+    Int(start_ns - construction_ns), opt.iteration_count[], terminated_early
 end
 
 function benchmark(::Type{T}, order::Int, num_stages::Int,
