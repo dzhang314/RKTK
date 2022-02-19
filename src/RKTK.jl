@@ -1,8 +1,8 @@
 println(raw"                ______ _   _______ _   __")
-println(raw"                | ___ \ | / /_   _| | / /   Version  2.2")
+println(raw"                | ___ \ | / /_   _| | / /   Version  2.3")
 println(raw"                | |_/ / |/ /  | | | |/ /")
 println(raw"                |    /|    \  | | |    \   David K. Zhang")
-println(raw"                | |\ \| |\  \ | | | |\  \     (c) 2019")
+println(raw"                | |\ \| |\  \ | | | |\  \     (c) 2022")
 println(raw"                |_| \_\_| \_/ |_| |_| \_/")
 println()
 println("RKTK is free software distributed under the terms of the MIT license.")
@@ -16,8 +16,8 @@ using Printf: @sprintf
 using Statistics: mean, std
 using UUIDs: UUID, uuid4
 
-using DZLinearAlgebra
 using DZOptimization
+using DZOptimization: norm
 using MultiFloats
 using RungeKuttaToolKit
 
@@ -69,10 +69,6 @@ end
 
 ################################################################################
 
-RKOCBFGSOptimizer{T} = BFGSOptimizer{
-    RKOCExplicitBackpropObjectiveFunctor{T},
-    RKOCExplicitBackpropGradientFunctor{T}, T}
-
 struct RKTKID
     order::Int
     num_stages::Int
@@ -96,7 +92,7 @@ const RKTK_FILENAME_REGEX = Regex(
 
 function find_rktkid(str::String)::Union{RKTKID,Nothing}
     m = match(RKTKID_REGEX, str)
-    if m != nothing
+    if m !== nothing
         RKTKID(parse(Int, m[1]), parse(Int, m[2]), UUID(m[3]))
     else
         nothing
@@ -107,9 +103,9 @@ function find_filename_by_id(dir::String, id::RKTKID)::Union{String,Nothing}
     result = nothing
     for filename in readdir(dir)
         m = match(RKTKID_REGEX, filename)
-        if ((m != nothing) && (parse(Int, m[1]) == id.order) &&
+        if ((m !== nothing) && (parse(Int, m[1]) == id.order) &&
                 (parse(Int, m[2]) == id.num_stages) && (UUID(m[3]) == id.uuid))
-            if result != nothing
+            if result !== nothing
                 say("ERROR: Found multiple files with RKTK ID $id.")
                 exit()
             else
@@ -141,9 +137,13 @@ end
 score_str(x)::String = lpad(clamp(log_score(x), 0, 9999), 4, '0')
 scaled_score_str(x)::String = lpad(clamp(scaled_log_score(x), 0, 9999), 4, '0')
 
-rktk_score_str(opt::RKOCBFGSOptimizer{T}) where {T <: Real} =
-    score_str(opt.current_objective_value[]) * '-' * score_str(norm(opt.current_gradient)) *
-        '-' * scaled_score_str(norm(opt.current_point))
+rktk_score_str(opt) = *(
+    score_str(opt.current_objective_value[]),
+    '-',
+    score_str(norm(opt.current_gradient)),
+    '-',
+    scaled_score_str(norm(opt.current_point))
+)
 
 rktk_filename(opt, id::RKTKID)::String =
     rktk_score_str(opt) * '-' * string(id) * ".txt"
@@ -215,11 +215,11 @@ end
 
 ################################################################################
 
-function save_to_file(opt::RKOCBFGSOptimizer{T}, id::RKTKID) where {T <: Real}
+function save_to_file(opt, id::RKTKID) where {T <: Real}
     filename = rktk_filename(opt, id)
     rmk("Saving progress to file ", filename, "...")
     old_filename = find_filename_by_id(".", id)
-    if old_filename != nothing
+    if old_filename !== nothing
         if old_filename != filename
             mv(old_filename, filename)
         end
@@ -247,7 +247,7 @@ end
 
 const TERM = isa(stdout, Base.TTY)
 
-function run!(opt::RKOCBFGSOptimizer{T}, id::RKTKID) where {T <: Real}
+function run!(opt, id::RKTKID) where {T <: Real}
     print_table_header()
     print_table_row(opt, "NONE")
     save_to_file(opt, id)
@@ -274,16 +274,15 @@ function run!(opt::RKOCBFGSOptimizer{T}, id::RKTKID) where {T <: Real}
     end
 end
 
-function run!(opt::RKOCBFGSOptimizer{T}, id::RKTKID,
-              duration_ns::UInt) where {T <: Real}
+function run!(opt, id::RKTKID, duration_ns::UInt) where {T <: Real}
     save_to_file(opt, id)
     start_time = last_save_time = time_ns()
     while true
-        _, objective_decreased = step!(opt)
+        step!(opt)
         current_time = time_ns()
-        if (!objective_decreased) || (current_time - start_time > duration_ns)
+        if opt.has_converged[] || (current_time - start_time > duration_ns)
             save_to_file(opt, id)
-            return !objective_decreased
+            return opt.has_converged[]
         end
         if current_time - last_save_time > UInt(60_000_000_000)
             save_to_file(opt, id)
@@ -303,41 +302,6 @@ function search(::Type{T}, id::RKTKID) where {T <: Real}
     run!(optimizer, id)
     say("\nCompleted $T search $id.\n")
 end
-
-# function multisearch(::Type{T}, order::Int, num_stages::Int) where {T <: Real}
-#     num_threads = nthreads()
-#     num_opts = num_threads - 1
-#     num_vars = div(num_stages * (num_stages + 1), 2)
-#     say("Constructing optimizers...")
-#     optimizers = [rkoc_optimizer(
-#             T, order, num_stages, rand(BigFloat, num_vars), 0)
-#         for _ = 1 : num_opts]
-#     bfgs_used = zeros(Bool, num_opts)
-#     objective_decreased = zeros(Bool, num_opts)
-#     for i = 1 : num_opts
-#         print_table_row(optimizers[i], "NONE")
-#         bfgs_used[i], objective_decreased[i] = step!(optimizers[i])
-#     end
-#     @threads for i = 1 : num_threads
-#         if i <= num_opts
-#             while true
-#                 bfgs_used[i], objective_decreased[i] = step!(optimizers[i])
-#             end
-#         else
-#             while true
-#                 for i = 1 : num_opts
-#                     print("\033[F")
-#                 end
-#                 for i = 1 : num_opts
-#                     print_table_row(optimizers[i],
-#                         ifelse(objective_decreased[i],
-#                             ifelse(bfgs_used[i], "BFGS", "GRAD"), "DONE"))
-#                 end
-
-#             end
-#         end
-#     end
-# end
 
 function refine(::Type{T}, id::RKTKID, filename::String) where {T <: Real}
     setprecision(approx_precision(T))
@@ -359,9 +323,9 @@ end
 
 function clean(::Type{T}) where {T <: Real}
     setprecision(approx_precision(T))
-    optimizers = Tuple{Int,RKTKID,RKOCBFGSOptimizer{T}}[]
+    optimizers = Tuple{Int,RKTKID,Any}[]
     for filename in readdir()
-        if match(RKTKID_REGEX, filename) != nothing
+        if match(RKTKID_REGEX, filename) !== nothing
             id = find_rktkid(filename)
             optimizer, header = rkoc_optimizer(T, id, filename)
             if precision(BigFloat) < parse(Int, header[2])
@@ -389,7 +353,7 @@ function clean(::Type{T}) where {T <: Real}
                 id, " (", stop_iter - start_iter, " iterations: ",
                 old_score, " => ", new_score, ") on thread ", threadid(), ".")
         end
-        next_optimizers = Tuple{Int,RKTKID,RKOCBFGSOptimizer{T}}[]
+        next_optimizers = Tuple{Int,RKTKID,Any}[]
         for i = 1 : length(optimizers)
             if !completed[i]
                 _, id, optimizer = optimizers[i]
@@ -417,8 +381,8 @@ function benchmark(::Type{T}, order::Int, num_stages::Int,
     benchmark_ns = round(typeof(start_ns), benchmark_secs * 1_000_000_000)
     terminated_early = false
     while time_ns() - start_ns < benchmark_ns
-        _, made_progress = step!(opt)
-        if !made_progress
+        step!(opt)
+        if opt.has_converged[]
             terminated_early = true
             break
         end
@@ -454,7 +418,7 @@ end
 
 function get_order(n::Int)
     result = tryparse(Int, ARGS[n])
-    if (result == nothing) || (result < 1) || (result > 20)
+    if (result === nothing) || (result < 1) || (result > 20)
         say("ERROR: Parameter $n (\"$(ARGS[n])\") must be ",
             "an integer between 1 and 20.")
         exit()
@@ -464,7 +428,7 @@ end
 
 function get_num_stages(n::Int)
     result = tryparse(Int, ARGS[n])
-    if (result == nothing) || (result < 1) || (result > 99)
+    if (result === nothing) || (result < 1) || (result > 99)
         say("ERROR: Stage parameter $n (\"$(ARGS[n])\") must be ",
             "an integer between 1 and 99.")
         exit()
@@ -491,14 +455,14 @@ function main()
 
     end elseif uppercase(ARGS[1]) == "REFINE" let
         id = find_rktkid(ARGS[2])
-        if id == nothing
+        if id === nothing
             say("ERROR: Invalid RKTK ID ", ARGS[2], ".")
             say("RKTK IDs have the form ",
                 "RKTK-XXYY-ZZZZZZZZ-ZZZZ-ZZZZ-ZZZZ-ZZZZZZZZZZZZ.\n")
             exit()
         end
         filename = find_filename_by_id(".", id)
-        if filename == nothing
+        if filename === nothing
             say("ERROR: No file exists with RKTK ID $id.\n")
             exit()
         end
