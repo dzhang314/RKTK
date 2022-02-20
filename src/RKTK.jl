@@ -182,12 +182,14 @@ function rmk_table_row(iter, obj_value, grad_norm,
 end
 
 function print_table_row(opt, type)::Nothing
-    print_table_row(opt.iteration_count[], opt.current_objective_value[], norm(opt.current_gradient),
+    print_table_row(opt.iteration_count[], opt.current_objective_value[],
+                    norm(opt.current_gradient),
                     opt.last_step_size[1], norm(opt.current_point), type)
 end
 
 function rmk_table_row(opt, type)::Nothing
-    rmk_table_row(opt.iteration_count[], opt.current_objective_value[], norm(opt.current_gradient),
+    rmk_table_row(opt.iteration_count[], opt.current_objective_value[],
+                  norm(opt.current_gradient),
                   opt.last_step_size[1], norm(opt.current_point), type)
 end
 
@@ -267,7 +269,7 @@ function run!(opt, id::RKTKID) where {T <: Real}
         if opt.last_step_type[] == DZOptimization.GradientDescentStep
             print_table_row(opt, "GRAD")
             last_print_time = current_time
-        elseif TERM && (current_time - last_print_time > UInt(80_000_000))
+        elseif TERM && (current_time - last_print_time > UInt(100_000_000))
             rmk_table_row(opt, "BFGS")
             last_print_time = current_time
         end
