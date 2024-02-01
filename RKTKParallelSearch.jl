@@ -108,7 +108,7 @@ const SEED_COUNTER = Atomic{UInt64}(0)
 function thread_work(order::Int, num_stages::Int, max_seed::UInt64)
     evaluator = RKOCEvaluator{Float64}(order, num_stages)
     while true
-        seed = atomic_add!(SEED_COUNTER, one(UInt64)) - one(UInt64)
+        seed = atomic_add!(SEED_COUNTER, one(UInt64))
         if seed > max_seed
             break
         end
@@ -119,7 +119,7 @@ end
 
 function main(order::Int, num_stages::Int, min_seed::UInt64, max_seed::UInt64)
     SEED_COUNTER[] = min_seed
-    @threads for _ in 1:nthreads()
+    @threads for _ = 1:nthreads()
         thread_work(order, num_stages, max_seed)
     end
 end
