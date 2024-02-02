@@ -7,9 +7,16 @@ using Printf
 using RungeKuttaToolKit
 
 
+const VERBOSE = (stdout isa Base.TTY) && (nthreads() == 1)
+
+
 function fprintln(io::IO, args...)
     println(io, args...)
     flush(io)
+    if VERBOSE
+        println(stdout, args...)
+        flush(stdout)
+    end
 end
 
 
@@ -137,9 +144,9 @@ function parse_arguments()
     try
         @assert 3 <= length(ARGS) <= 4
         order = parse(Int, ARGS[1])
-        @assert order > 0
+        @assert 0 < order < 100
         num_stages = parse(Int, ARGS[2])
-        @assert num_stages > 0
+        @assert 0 < num_stages < 100
         min_seed = parse(UInt64, ARGS[3])
         max_seed = parse(UInt64, ARGS[length(ARGS) == 4 ? 4 : 3])
         @assert min_seed <= max_seed
