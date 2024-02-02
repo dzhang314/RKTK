@@ -7,13 +7,20 @@ using Printf
 using RungeKuttaToolKit
 
 
-const VERBOSE = (stdout isa Base.TTY) && (nthreads() == 1)
+const WRITE_FILE = !("--no-file" in ARGS)
+const WRITE_TERM = ("--no-file" in ARGS) || (
+    (stdout isa Base.TTY) && (nthreads() == 1))
+filter!(arg -> (arg != "--no-file"), ARGS)
 
 
 function fprintln(io::IO, args...)
-    println(io, args...)
-    flush(io)
-    if VERBOSE
+    if WRITE_FILE
+        println(io, args...)
+        flush(io)
+    else
+        @assert io === devnull
+    end
+    if WRITE_TERM
         println(stdout, args...)
         flush(stdout)
     end
@@ -69,26 +76,30 @@ function search(
         random_array(seed, Float64, num_variables),
         sqrt(num_variables * eps(Float64)), num_variables)
 
-    open(tempname, "w") do io
-        for x in opt.current_point
-            fprintln(io, @sprintf("%+.16e", x))
-        end
-        fprintln(io)
-        fprintln(io, "| ITERATION # |  RMS RESIDUAL  |  RMS GRADIENT  " *
-                     "|   RMS  COEFF   |  STEP  LENGTH  |")
-        fprintln(io, "|-------------|----------------|----------------" *
-                     "|----------------|----------------|")
-        fprint_status(io, opt; force=true)
-        while !opt.has_terminated[]
-            step!(opt)
-            fprint_status(io, opt;
-                force=(opt.iteration_count[] % 1000 == 0))
-        end
-        fprint_status(io, opt; force=true)
-        fprintln(io)
-        for x in opt.current_point
-            fprintln(io, @sprintf("%+.16e", x))
-        end
+    io = WRITE_FILE ? open(tempname, "w") : devnull
+
+    for x in opt.current_point
+        fprintln(io, @sprintf("%+.16e", x))
+    end
+    fprintln(io)
+    fprintln(io, "| ITERATION # |  RMS RESIDUAL  |  RMS GRADIENT  " *
+                 "|   RMS  COEFF   |  STEP  LENGTH  |")
+    fprintln(io, "|-------------|----------------|----------------" *
+                 "|----------------|----------------|")
+    fprint_status(io, opt; force=true)
+    while !opt.has_terminated[]
+        step!(opt)
+        fprint_status(io, opt;
+            force=(opt.iteration_count[] % 1000 == 0))
+    end
+    fprint_status(io, opt; force=true)
+    fprintln(io)
+    for x in opt.current_point
+        fprintln(io, @sprintf("%+.16e", x))
+    end
+
+    if WRITE_FILE
+        close(io)
     end
 
     num_constraints = length(evaluator.output_indices)
@@ -104,7 +115,9 @@ function search(
 
     filename = @sprintf("RKTK-%02d-%02d-%04d-%04d-%04d-%016X.txt", order,
         num_stages, residual_score, gradient_score, coeff_score, seed)
-    mv(tempname, filename)
+    if WRITE_FILE
+        mv(tempname, filename)
+    end
     println("Finished computing $filename.")
 end
 
@@ -125,12 +138,14 @@ end
 
 
 function main(order::Int, num_stages::Int, min_seed::UInt64, max_seed::UInt64)
-    dirname = @sprintf("RKTK-SEARCH-%02d-%02d", order, num_stages)
-    if basename(pwd()) != dirname
-        if !isdir(dirname)
-            mkdir(dirname)
+    if WRITE_FILE
+        dirname = @sprintf("RKTK-SEARCH-%02d-%02d", order, num_stages)
+        if basename(pwd()) != dirname
+            if !isdir(dirname)
+                mkdir(dirname)
+            end
+            cd(dirname)
         end
-        cd(dirname)
     end
     SEED_COUNTER[] = min_seed
     @threads for _ = 1:nthreads()
