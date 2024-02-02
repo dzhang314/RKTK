@@ -63,12 +63,14 @@ function search(
     tempname = @sprintf("RKTK-%02d-%02d-XXXX-XXXX-XXXX-%016X.txt",
         order, num_stages, seed)
     @assert length(tempname) == 46
-    existing = find_existing_file(tempname[1:11], tempname[26:46])
-    if isnothing(existing)
-        println("Computing $tempname...")
-    else
-        println("$existing already exists.")
-        return nothing
+    if WRITE_FILE
+        existing = find_existing_file(tempname[1:11], tempname[26:46])
+        if isnothing(existing)
+            println("Computing $tempname...")
+        else
+            println("$existing already exists.")
+            return nothing
+        end
     end
 
     num_variables = ((num_stages + 1) * num_stages) >> 1
