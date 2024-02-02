@@ -125,6 +125,13 @@ end
 
 
 function main(order::Int, num_stages::Int, min_seed::UInt64, max_seed::UInt64)
+    dirname = @sprintf("RKTK-SEARCH-%02d-%02d", order, num_stages)
+    if basename(pwd()) != dirname
+        if !isdir(dirname)
+            mkdir(dirname)
+        end
+        cd(dirname)
+    end
     SEED_COUNTER[] = min_seed
     @threads for _ = 1:nthreads()
         thread_work(order, num_stages, max_seed)
@@ -133,22 +140,31 @@ end
 
 
 const USAGE_STRING = """\
-Usage: julia [options] $PROGRAM_FILE <order> <num_stages> <seed> [seed]
+Usage: julia [options] $PROGRAM_FILE <order> <num_stages> [seed] [seed]
 [options] refers to Julia options, such as -O3 or --math-mode=fast.
 <order> and <num_stages> must be positive integers.
-If two seeds are specified, they are treated as the bounds of a range.
+If no seed is specified, then a search is performed for every possible seed,
+    starting from zero and counting up through every unsigned 64-bit integer.
+If one seed is specified, it is treated as an upper bound (inclusive).
+If two seeds are specified, they are treated as bounds (inclusive).
 """
 
 
 function parse_arguments()
     try
-        @assert 3 <= length(ARGS) <= 4
+        @assert 2 <= length(ARGS) <= 4
         order = parse(Int, ARGS[1])
         @assert 0 < order < 100
         num_stages = parse(Int, ARGS[2])
         @assert 0 < num_stages < 100
-        min_seed = parse(UInt64, ARGS[3])
-        max_seed = parse(UInt64, ARGS[length(ARGS) == 4 ? 4 : 3])
+        min_seed = typemin(UInt64)
+        max_seed = typemax(UInt64)
+        if length(ARGS) == 3
+            max_seed = parse(UInt64, ARGS[3])
+        elseif length(ARGS) == 4
+            min_seed = parse(UInt64, ARGS[3])
+            max_seed = parse(UInt64, ARGS[4])
+        end
         @assert min_seed <= max_seed
         return (order, num_stages, min_seed, max_seed)
     catch e
