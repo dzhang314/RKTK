@@ -1,6 +1,6 @@
 # RKTK
 
-**Copyright © 2019-2024 by David K. Zhang. Released under the [MIT License][1].**
+**Copyright © 2018-2024 by David K. Zhang. Released under the [MIT License][1].**
 
 **RKTK** (Runge–Kutta toolkit) is a collection of scripts and tools, written in the [Julia][2] programming language, for discovering and optimizing new [Runge–Kutta methods][3]. This software powered my discovery of the first explicit 10<sup>th</sup>-order Runge–Kutta method with 16 stages, as described in [my undergraduate thesis][4], marking the first advance in over 40 years since [Ernst Hairer's discovery of a method with 17 stages in 1978][5].
 
@@ -12,6 +12,8 @@
 
 Both **RungeKuttaToolKit.jl** and **RKTK** are designed with reproducibility as an explicit goal. The [RKTKSearch.jl][8] program has been tested to produce bit-for-bit identical results across multiple architectures (i686, x86-64, ARMv8) and multiple CPU generations (Haswell, Skylake, Rocket Lake, Zen 4).
 
+
+
 ## Getting Started
 
 Clone this repository, then run:
@@ -21,6 +23,8 @@ julia -O3 --threads=<num_threads> RKTKSearch.jl <order> <num_stages>
 ```
 
 Set `<num_threads>`, `<order>`, and `<num_stages>` appropriately. On processors with SMT (e.g., Intel Hyper-Threading Technology), it is worth experimenting with setting `<num_threads>` equal to the number of logical or physical processor cores. We find that results vary across CPU generations. Logical cores are favored on Haswell and Skylake, while physical cores are favored on Rocket Lake and Zen 4.
+
+
 
 [1]: https://github.com/dzhang314/RKTK/blob/master/LICENSE
 [2]: https://julialang.org/
