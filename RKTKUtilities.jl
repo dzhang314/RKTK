@@ -36,16 +36,16 @@ end
 
 function read_rktk_database(dirpath::AbstractString)
     @assert isdir(dirpath)
-    result = Dict{Tuple{Int,Int},Dict{UInt64,String}}()
+    result = Dict{Tuple{Int,Int},Tuple{String,Dict{UInt64,String}}}()
     for dirname in readdir(dirpath)
-        subpath = joinpath(dirpath, dirname)
+        subpath = abspath(joinpath(dirpath, dirname))
         if isdir(subpath)
             m = match(RKTK_SEARCH_DIRECTORY_REGEX, dirname)
             if !isnothing(m)
                 order = parse(Int, m[1]; base=10)
                 num_stages = parse(Int, m[2]; base=10)
-                result[(order, num_stages)] =
-                    read_rktk_search_directory(subpath)
+                result[(order, num_stages)] = (subpath,
+                    read_rktk_search_directory(subpath))
             end
         end
     end
