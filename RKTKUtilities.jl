@@ -1,3 +1,6 @@
+using Dates
+
+
 const RKTK_SEARCH_FILENAME_REGEX =
     r"^RKTK-(..)-(..)-(....)-(....)-(....)-(................)\.txt$"
 const RKTK_INCOMPLETE_FILENAME_REGEX =
@@ -6,30 +9,36 @@ const RKTK_COMPLETE_FILENAME_REGEX =
     r"^RKTK-([0-9]{2})-([0-9]{2})-([0-9]{4})-([0-9]{4})-([0-9]{4})-([0-9A-F]{16})\.txt$"
 const RKTK_SEARCH_DIRECTORY_REGEX = r"^RKTK-SEARCH-([0-9]{2})-([0-9]{2})$"
 const FILE_CHUNK_SIZE = 4096
+const UNIX_TIME_2024 = datetime2unix(DateTime(2024))
 
 
 function read_rktk_search_directory(dirpath::AbstractString)
     @assert isdir(dirpath)
-    filenames = filter!(
-        name -> !isnothing(match(RKTK_SEARCH_FILENAME_REGEX, name)),
-        readdir(dirpath; sort=false))
     result = Dict{UInt64,String}()
-    if iszero(length(filenames))
-        return result
-    end
     orders = Set{Int}()
     stages = Set{Int}()
-    for filename in filenames
-        complete_match = match(RKTK_COMPLETE_FILENAME_REGEX, filename)
-        @assert !isnothing(complete_match)
-        push!(orders, parse(Int, complete_match[1]; base=10))
-        push!(stages, parse(Int, complete_match[2]; base=10))
-        id = parse(UInt64, complete_match[6]; base=16)
-        @assert !haskey(result, id)
-        result[id] = filename
+    found = false
+    for filename in readdir(dirpath; sort=false)
+        filepath = abspath(joinpath(dirpath, filename))
+        if isfile(filepath)
+            m = match(RKTK_SEARCH_FILENAME_REGEX, filename)
+            if !isnothing(m)
+                found = true
+                @assert mtime(filepath) > UNIX_TIME_2024
+                m = match(RKTK_COMPLETE_FILENAME_REGEX, filename)
+                @assert !isnothing(m)
+                push!(orders, parse(Int, m[1]; base=10))
+                push!(stages, parse(Int, m[2]; base=10))
+                id = parse(UInt64, m[6]; base=16)
+                @assert !haskey(result, id)
+                result[id] = filename
+            end
+        end
     end
-    @assert isone(length(orders))
-    @assert isone(length(stages))
+    if found
+        @assert isone(length(orders))
+        @assert isone(length(stages))
+    end
     return result
 end
 
@@ -37,14 +46,14 @@ end
 function read_rktk_database(dirpath::AbstractString)
     @assert isdir(dirpath)
     result = Dict{Tuple{Int,Int},Tuple{String,Dict{UInt64,String}}}()
-    for dirname in readdir(dirpath)
+    for dirname in readdir(dirpath; sort=false)
         subpath = abspath(joinpath(dirpath, dirname))
         if isdir(subpath)
             m = match(RKTK_SEARCH_DIRECTORY_REGEX, dirname)
             if !isnothing(m)
                 order = parse(Int, m[1]; base=10)
-                num_stages = parse(Int, m[2]; base=10)
-                result[(order, num_stages)] = (subpath,
+                stage = parse(Int, m[2]; base=10)
+                result[(order, stage)] = (subpath,
                     read_rktk_search_directory(subpath))
             end
         end
