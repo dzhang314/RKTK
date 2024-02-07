@@ -32,11 +32,11 @@ function fprint_status(io::IO, opt::LBFGSOptimizer; force::Bool=false)
     reset_occurred = ((opt.iteration_count[] >= history_count) &&
                       (opt._history_count[] != history_count))
     if reset_occurred || force
-        num_constraints = length(opt.objective_function.output_indices)
+        num_residuals = length(opt.objective_function.residuals)
         num_variables = length(opt.current_point)
         fprintln(io, @sprintf("|%12d | %.8e | %.8e | %.8e | %.8e |%s",
             opt.iteration_count[],
-            sqrt(opt.current_objective_value[] / num_constraints),
+            sqrt(opt.current_objective_value[] / num_residuals),
             sqrt(norm2(opt.current_gradient) / num_variables),
             sqrt(norm2(opt.current_point) / num_variables),
             sqrt(norm2(opt.delta_point) / num_variables),
@@ -104,8 +104,8 @@ function search(
         close(io)
     end
 
-    num_constraints = length(evaluator.output_indices)
-    rms_residual = sqrt(opt.current_objective_value[] / num_constraints)
+    num_residuals = length(evaluator.residuals)
+    rms_residual = sqrt(opt.current_objective_value[] / num_residuals)
     rms_gradient = sqrt(norm2(opt.current_gradient) / num_variables)
     rms_coeff = sqrt(norm2(opt.current_point) / num_variables)
     residual_score = round(Int,
