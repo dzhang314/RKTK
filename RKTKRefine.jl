@@ -59,21 +59,26 @@ function main()
         length(final_point))
 
     print_status(opt; force=true)
-    serialize(@sprintf("RKTK-REFINE-%02d-%02d-%016X-%012d.jls",
-            order, num_stages, id, opt.iteration_count[]), opt)
+    checkpoint = @sprintf("RKTK-REFINE-%02d-%02d-%016X-%012d.jls",
+        order, num_stages, id, opt.iteration_count[])
+    serialize(checkpoint, opt)
     while !opt.has_terminated[]
         step!(opt)
         if opt.iteration_count[] % 1000 == 0
             print_status(opt; force=true)
-            serialize(@sprintf("RKTK-REFINE-%02d-%02d-%016X-%012d.jls",
-                    order, num_stages, id, opt.iteration_count[]), opt)
+            rm(checkpoint)
+            checkpoint = @sprintf("RKTK-REFINE-%02d-%02d-%016X-%012d.jls",
+                order, num_stages, id, opt.iteration_count[])
+            serialize(checkpoint, opt)
         else
             print_status(opt; force=false)
         end
     end
     print_status(opt; force=true)
-    serialize(@sprintf("RKTK-REFINE-%02d-%02d-%016X-%012d.jls",
-            order, num_stages, id, opt.iteration_count[]), opt)
+    rm(checkpoint)
+    checkpoint = @sprintf("RKTK-REFINE-%02d-%02d-%016X-%012d.jls",
+        order, num_stages, id, opt.iteration_count[])
+    serialize(checkpoint, opt)
 
 end
 
