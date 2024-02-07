@@ -34,7 +34,13 @@ function merge(dirpath::AbstractString)
                     order = parse(Int, complete_match[1]; base=10)
                     stage = parse(Int, complete_match[2]; base=10)
                     id = parse(UInt64, complete_match[6]; base=16)
-                    @assert haskey(RKTK_DATABASE, (order, stage))
+                    if !haskey(RKTK_DATABASE, (order, stage))
+                        newpath = abspath(joinpath(RKTK_DATABASE_DIRECTORY,
+                            @sprintf("RKTK-SEARCH-%02d-%02d", order, stage)))
+                        mkdir(newpath)
+                        RKTK_DATABASE[(order, stage)] =
+                            (newpath, Dict{UInt64,String}())
+                    end
                     dbdir, db = RKTK_DATABASE[(order, stage)]
                     if haskey(db, id)
                         dbpath = abspath(joinpath(dbdir, db[id]))

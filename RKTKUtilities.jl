@@ -63,6 +63,8 @@ end
 
 
 function files_are_identical(path1::AbstractString, path2::AbstractString)
+    @assert isfile(path1)
+    @assert isfile(path2)
     if basename(path1) != basename(path2)
         return false
     end
