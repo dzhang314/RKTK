@@ -27,7 +27,7 @@ function fprintln(io::IO, args...)
 end
 
 
-function fprint_status(io::IO, opt; force::Bool=false)
+function fprint_status(io::IO, opt::LBFGSOptimizer; force::Bool=false)
     history_count = length(opt._rho)
     reset_occurred = ((opt.iteration_count[] >= history_count) &&
                       (opt._history_count[] != history_count))

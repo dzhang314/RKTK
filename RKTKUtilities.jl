@@ -1,4 +1,4 @@
-using Dates
+using Dates: DateTime, datetime2unix
 
 
 const RKTK_SEARCH_FILENAME_REGEX =
