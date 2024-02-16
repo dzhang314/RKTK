@@ -16,7 +16,7 @@ fi
 echo "Running $refine_script in parallel using $num_windows windows."
 
 commands=()
-for filename in $(ls); do
+for filename in $(ls | sort -r); do
     commands+=("julia -O3 $refine_script $filename")
 done
 echo "Found ${#commands[@]} files to refine."
