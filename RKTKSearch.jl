@@ -156,7 +156,7 @@ function main(order::Int, num_stages::Int, min_seed::UInt64, max_seed::UInt64)
 end
 
 
-const USAGE_STRING = """\
+const USAGE_STRING = """
 Usage: julia [options] $PROGRAM_FILE <order> <num_stages> [seed] [seed]
 [options] refers to Julia options, such as -O3 or --math-mode=fast.
 <order> and <num_stages> must be positive integers.
