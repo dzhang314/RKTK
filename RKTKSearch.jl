@@ -1,6 +1,6 @@
 using Base.Threads
 using DZOptimization
-using DZOptimization: norm2
+using DZOptimization.Kernels: norm2
 using DZOptimization.PCG
 using MultiFloats
 using Printf

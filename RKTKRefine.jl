@@ -1,6 +1,6 @@
 include("RKTKUtilities.jl")
 using DZOptimization
-using DZOptimization: norm2
+using DZOptimization.Kernels: norm2
 using MultiFloats
 using Printf
 using RungeKuttaToolKit
