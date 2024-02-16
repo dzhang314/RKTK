@@ -100,6 +100,15 @@ function count_bits(n::Int)
 end
 
 
+function find_first_missing_key(dict::Dict{K,V}) where {K,V}
+    for key = typemin(K):typemax(K)
+        if !haskey(dict, key)
+            return key
+        end
+    end
+end
+
+
 function clean_floor(n::Int)
     num_bits = count_bits(n) - 1
     floor2 = 1 << num_bits
