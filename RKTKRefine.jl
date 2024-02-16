@@ -25,18 +25,15 @@ function print_status(opt::LBFGSOptimizer; force::Bool=false)
 end
 
 
-function main()
-
-    @assert length(ARGS) == 1
-    filename = basename(ARGS[1])
-
-    m = match(RKTK_COMPLETE_FILENAME_REGEX, filename)
+function read_rktk_search_file(filepath::AbstractString)
+    m = match(RKTK_COMPLETE_FILENAME_REGEX, basename(filepath))
     @assert !isnothing(m)
     order = parse(Int, m[1]; base=10)
     num_stages = parse(Int, m[2]; base=10)
     id = parse(UInt64, m[6]; base=16)
 
-    parts = split(read(ARGS[1], String), "\n\n")
+    @assert isfile(filepath)
+    parts = split(read(filepath, String), "\n\n")
     @assert length(parts) == 3
     initial_part, table, final_part = parts
 
@@ -44,7 +41,6 @@ function main()
     final_lines = split(final_part, '\n')
     @assert length(initial_lines) + 1 == length(final_lines)
     @assert isempty(final_lines[end])
-
     initial_point = parse.(Float64, initial_lines)
     final_point = parse.(Float64, final_lines[1:end-1])
 
@@ -52,6 +48,15 @@ function main()
     @assert length(table_entries) == 7
     @assert isempty(table_entries[1])
     iteration_count = parse(Int, table_entries[2])
+
+    return (order, num_stages, id, initial_point, final_point, iteration_count)
+end
+
+
+function main()
+
+    @assert length(ARGS) == 1
+    (order, num_stages, id, _, final_point, _) = read_rktk_search_file(ARGS[1])
 
     evaluator = RKOCEvaluator{Float64x2}(order, num_stages)
     opt = LBFGSOptimizer(evaluator, evaluator', QuadraticLineSearch(),
