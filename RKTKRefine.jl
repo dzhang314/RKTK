@@ -53,6 +53,9 @@ function read_rktk_search_file(filepath::AbstractString)
 end
 
 
+const NORM_LIMIT = Float64x2(10.0)
+
+
 function main()
 
     @assert length(ARGS) == 1
@@ -62,12 +65,16 @@ function main()
     opt = LBFGSOptimizer(evaluator, evaluator', QuadraticLineSearch(),
         Float64x2.(final_point), sqrt(length(final_point) * eps(Float64x2)),
         length(final_point))
+    norm_bound = NORM_LIMIT * NORM_LIMIT * length(opt.current_point)
 
     print_status(opt; force=true)
     checkpoint = @sprintf("RKTK-REFINE-%02d-%02d-%016X-%012d.jls",
         order, num_stages, id, opt.iteration_count[])
     serialize(checkpoint, opt)
     while !opt.has_terminated[]
+        if norm2(opt.current_point) > norm_bound
+            break
+        end
         step!(opt)
         if opt.iteration_count[] % 1000 == 0
             print_status(opt; force=true)
