@@ -12,3 +12,14 @@ else
     echo "Reproducibility test failed."
     exit 1
 fi
+
+output=$(julia -O3 RKTKProjectionSearch.jl 7 9 0x001A 0x001A --no-file)
+hash=$(echo "$output" | md5sum | awk '{print $1}')
+
+# Compare the computed hash with the expected hash
+if [[ "$hash" == "694025855db63f8d22318cfd263bcd59" ]]; then
+    echo "Projection reproducibility test passed."
+else
+    echo "Projection reproducibility test failed."
+    exit 1
+fi
