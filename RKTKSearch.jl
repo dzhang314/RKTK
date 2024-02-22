@@ -76,6 +76,9 @@ function find_existing_file(prefix::AbstractString, suffix::AbstractString)
 end
 
 
+const TOTAL_ITERATION_COUNT = Atomic{Int}(0)
+
+
 function search(
     evaluator, order::Int, num_stages::Int, mode::String, seed::UInt64
 )
@@ -117,6 +120,7 @@ function search(
                  "|----------------|----------------|")
     fprint_status(io, opt; force=true)
     failed = false
+    start_time = time_ns()
     while true
         step!(opt)
         if opt.has_terminated[]
@@ -128,6 +132,7 @@ function search(
         end
         fprint_status(io, opt; force=(opt.iteration_count[] % 1000 == 0))
     end
+    end_time = time_ns()
     fprint_status(io, opt; force=true)
 
     fprintln(io)
@@ -157,7 +162,11 @@ function search(
     if WRITE_FILE
         mv(filename, finalname)
     end
-    println("Finished computing $finalname.")
+
+    elapsed_time = (end_time - start_time) / 1.0e9
+    atomic_add!(TOTAL_ITERATION_COUNT, opt.iteration_count[])
+    @printf("Finished computing %s.\nPerformed %d L-BFGS iterations in %g seconds (%g iterations per second).\n",
+        finalname, opt.iteration_count[], elapsed_time, opt.iteration_count[] / elapsed_time)
 end
 
 
@@ -237,9 +246,14 @@ function main(order::Int, num_stages::Int, min_seed::UInt64, max_seed::UInt64)
         end
     end
     SEED_COUNTER[] = min_seed
+    start_time = time_ns()
     @threads for _ = 1:nthreads()
         thread_work(order, num_stages, max_seed)
     end
+    end_time = time_ns()
+    elapsed_time = (end_time - start_time) / 1.0e9
+    @printf("In total, performed %d L-BFGS iterations in %g seconds (%g iterations per second).\n",
+        TOTAL_ITERATION_COUNT[], elapsed_time, TOTAL_ITERATION_COUNT[] / elapsed_time)
 end
 
 
