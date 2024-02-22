@@ -164,73 +164,52 @@ end
 const SEED_COUNTER = Atomic{UInt64}(0)
 
 
-function thread_work_ae(order::Int, num_stages::Int, max_seed::UInt64)
-    evaluator = RKOCEvaluatorAE{Float64}(order, num_stages)
-    while true
-        seed = atomic_add!(SEED_COUNTER, one(UInt64))
-        if seed > max_seed
-            break
-        end
-        search(evaluator, order, num_stages, "AEM1", seed)
-    end
-end
-
-
-function thread_work_be(order::Int, num_stages::Int, max_seed::UInt64)
-    evaluator = RKOCEvaluatorBE{Float64}(order, num_stages)
-    while true
-        seed = atomic_add!(SEED_COUNTER, one(UInt64))
-        if seed > max_seed
-            break
-        end
-        search(evaluator, order, num_stages, "BEM1", seed)
-    end
-end
-
-
-function thread_work_ai(order::Int, num_stages::Int, max_seed::UInt64)
-    evaluator = RKOCEvaluatorAI{Float64}(order, num_stages)
-    while true
-        seed = atomic_add!(SEED_COUNTER, one(UInt64))
-        if seed > max_seed
-            break
-        end
-        search(evaluator, order, num_stages, "AIM1", seed)
-    end
-end
-
-
-function thread_work_bi(order::Int, num_stages::Int, max_seed::UInt64)
-    evaluator = RKOCEvaluatorBI{Float64}(order, num_stages)
-    while true
-        seed = atomic_add!(SEED_COUNTER, one(UInt64))
-        if seed > max_seed
-            break
-        end
-        search(evaluator, order, num_stages, "BIM1", seed)
-    end
-end
-
-
-function get_mode()
+function thread_work(order::Int, num_stages::Int, max_seed::UInt64)
     @static if REQUESTED_IMPLICIT && !REQUESTED_EXPLICIT
         @static if REQUESTED_APPROXIMATE_B && !REQUESTED_EXACT_B
-            return "BI"
+            evaluator = RKOCEvaluatorBI{Float64}(order, num_stages)
+            while true
+                seed = atomic_add!(SEED_COUNTER, one(UInt64))
+                if seed > max_seed
+                    break
+                end
+                search(evaluator, order, num_stages, "BIM1", seed)
+            end
         else
-            return "AI"
+            evaluator = RKOCEvaluatorAI{Float64}(order, num_stages)
+            while true
+                seed = atomic_add!(SEED_COUNTER, one(UInt64))
+                if seed > max_seed
+                    break
+                end
+                search(evaluator, order, num_stages, "AIM1", seed)
+            end
         end
     else
         @static if REQUESTED_APPROXIMATE_B && !REQUESTED_EXACT_B
-            return "BE"
+            evaluator = RKOCEvaluatorBE{Float64}(order, num_stages)
+            while true
+                seed = atomic_add!(SEED_COUNTER, one(UInt64))
+                if seed > max_seed
+                    break
+                end
+                search(evaluator, order, num_stages, "BEM1", seed)
+            end
         else
-            return "AE"
+            evaluator = RKOCEvaluatorAE{Float64}(order, num_stages)
+            while true
+                seed = atomic_add!(SEED_COUNTER, one(UInt64))
+                if seed > max_seed
+                    break
+                end
+                search(evaluator, order, num_stages, "AEM1", seed)
+            end
         end
     end
 end
 
 
 function main(order::Int, num_stages::Int, min_seed::UInt64, max_seed::UInt64)
-    mode = get_mode()
     if WRITE_FILE
         dirname = @sprintf("RKTK-SEARCH-%02d-%02d-%s", order, num_stages, mode)
         if basename(pwd()) != dirname
@@ -241,22 +220,8 @@ function main(order::Int, num_stages::Int, min_seed::UInt64, max_seed::UInt64)
         end
     end
     SEED_COUNTER[] = min_seed
-    if mode == "AE"
-        @threads for _ = 1:nthreads()
-            thread_work_ae(order, num_stages, max_seed)
-        end
-    elseif mode == "BE"
-        @threads for _ = 1:nthreads()
-            thread_work_be(order, num_stages, max_seed)
-        end
-    elseif mode == "AI"
-        @threads for _ = 1:nthreads()
-            thread_work_ai(order, num_stages, max_seed)
-        end
-    else
-        @threads for _ = 1:nthreads()
-            thread_work_bi(order, num_stages, max_seed)
-        end
+    @threads for _ = 1:nthreads()
+        thread_work(order, num_stages, max_seed)
     end
 end
 
