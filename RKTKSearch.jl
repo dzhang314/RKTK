@@ -164,6 +164,23 @@ end
 const SEED_COUNTER = Atomic{UInt64}(0)
 
 
+function get_mode()
+    @static if REQUESTED_IMPLICIT && !REQUESTED_EXPLICIT
+        @static if REQUESTED_APPROXIMATE_B && !REQUESTED_EXACT_B
+            return "BI"
+        else
+            return "AI"
+        end
+    else
+        @static if REQUESTED_APPROXIMATE_B && !REQUESTED_EXACT_B
+            return "BE"
+        else
+            return "AE"
+        end
+    end
+end
+
+
 function thread_work(order::Int, num_stages::Int, max_seed::UInt64)
     @static if REQUESTED_IMPLICIT && !REQUESTED_EXPLICIT
         @static if REQUESTED_APPROXIMATE_B && !REQUESTED_EXACT_B
@@ -211,7 +228,7 @@ end
 
 function main(order::Int, num_stages::Int, min_seed::UInt64, max_seed::UInt64)
     if WRITE_FILE
-        dirname = @sprintf("RKTK-%02d-%02d-%s", order, num_stages, mode)
+        dirname = @sprintf("RKTK-%02d-%02d-%s", order, num_stages, get_mode())
         if basename(pwd()) != dirname
             if !isdir(dirname)
                 mkdir(dirname)
