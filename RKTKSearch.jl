@@ -211,7 +211,7 @@ end
 
 function main(order::Int, num_stages::Int, min_seed::UInt64, max_seed::UInt64)
     if WRITE_FILE
-        dirname = @sprintf("RKTK-SEARCH-%02d-%02d-%s", order, num_stages, mode)
+        dirname = @sprintf("RKTK-%02d-%02d-%s", order, num_stages, mode)
         if basename(pwd()) != dirname
             if !isdir(dirname)
                 mkdir(dirname)
