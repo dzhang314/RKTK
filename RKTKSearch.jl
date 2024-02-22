@@ -90,9 +90,9 @@ function search(
     if WRITE_FILE
         existing = find_existing_file(filename[1:16], filename[31:51])
         if isnothing(existing)
-            println("Computing $filename...")
+            @printf("Computing %s...\n", filename)
         else
-            println("$existing already exists.")
+            @printf("%s already exists.\n", existing)
             return nothing
         end
     end
