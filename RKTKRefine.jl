@@ -231,7 +231,10 @@ function main()
             end_iteration = optimizer.iteration_count[]
             new_scores = compute_scores(optimizer)
 
-            @assert end_iteration > start_iteration
+            @assert end_iteration >= start_iteration
+            if end_iteration == start_iteration
+                @assert optimizer.has_terminated[]
+            end
 
             elapsed_time = (end_time - start_time) / 1.0e9
             @printf("Refined seed %016X from %04d-%04d-%04d to %04d-%04d-%04d.\nPerformed %d iterations in %g seconds (%g iterations per second).\n",
