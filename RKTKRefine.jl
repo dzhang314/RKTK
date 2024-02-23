@@ -77,10 +77,11 @@ end
 function compute_jls_filename(order::Int, num_stages::Int, record::RKTKRecord)
     optimizer, seed, iteration_counts = record
     residual_score, gradient_score, norm_score = compute_scores(optimizer)
-    return @sprintf("RKTK-%02d-%02d-%s-%04d-%04d-%04d-%012d-%016X.jls",
+    return @sprintf("RKTK-%02d-%02d-%s-%04d-%04d-%04d-%s-%016X.jls",
         order, num_stages, NEXT_MODE,
         residual_score, gradient_score, norm_score,
-        sum(n for (_, n) in iteration_counts), seed)
+        lpad(sum(n for (_, n) in iteration_counts), 12,
+            optimizer.has_terminated[] ? '0' : 'X'), seed)
 end
 
 
@@ -213,7 +214,7 @@ function main()
         end
     end
 
-    while true
+    while !isempty(records)
         @threads for record in records
             optimizer, seed, iteration_counts = record
 
@@ -233,8 +234,8 @@ function main()
             @assert end_iteration > start_iteration
 
             elapsed_time = (end_time - start_time) / 1.0e9
-            @printf("Refined seed %016X from %04d-%04d-%04d to %04d-%04d-%04d.\nPerformed %d iterations (%g iterations per second).\n",
-                seed, old_scores..., new_scores..., end_iteration - start_iteration, (end_iteration - start_iteration) / elapsed_time)
+            @printf("Refined seed %016X from %04d-%04d-%04d to %04d-%04d-%04d.\nPerformed %d iterations in %g seconds (%g iterations per second).\n",
+                seed, old_scores..., new_scores..., end_iteration - start_iteration, elapsed_time, (end_iteration - start_iteration) / elapsed_time)
 
             mode, _ = iteration_counts[end]
             @assert mode == NEXT_MODE
@@ -246,7 +247,7 @@ function main()
             available_jls_files[seed] = filename
             @printf("Wrote %s to disk.\n", filename)
         end
-        filter!((optimizer, _, _) -> !optimizer.has_terminated[], records)
+        filter!(((optimizer, _, _),) -> !optimizer.has_terminated[], records)
     end
 end
 
