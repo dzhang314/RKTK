@@ -1,4 +1,4 @@
-include("RKTKUtilities.jl")
+using Base.Threads
 using DZOptimization
 using DZOptimization.Kernels: norm2
 using MultiFloats
@@ -7,91 +7,247 @@ using RungeKuttaToolKit
 using Serialization
 
 
-function print_status(opt::LBFGSOptimizer; force::Bool=false)
-    history_count = length(opt._rho)
-    reset_occurred = ((opt.iteration_count[] >= history_count) &&
-                      (opt._history_count[] != history_count))
-    if reset_occurred || force
-        num_residuals = length(opt.objective_function.residuals)
-        num_variables = length(opt.current_point)
-        @printf("|%12d | %.8e | %.8e | %.8e | %.8e |%s\n",
-            opt.iteration_count[],
-            sqrt(opt.current_objective_value[] / num_residuals),
-            sqrt(norm2(opt.current_gradient) / num_variables),
-            sqrt(norm2(opt.current_point) / num_variables),
-            sqrt(norm2(opt.delta_point) / num_variables),
-            reset_occurred ? " RESET" : "")
-    end
+const OptimizerAE{T} = LBFGSOptimizer{typeof(DZOptimization.NULL_CONSTRAINT),
+    RKOCEvaluatorAE{T},RungeKuttaToolKit.RKOCEvaluatorAEAdjoint{T},QuadraticLineSearch,T,1}
+const OptimizerAI{T} = LBFGSOptimizer{typeof(DZOptimization.NULL_CONSTRAINT),
+    RKOCEvaluatorAI{T},RungeKuttaToolKit.RKOCEvaluatorAIAdjoint{T},QuadraticLineSearch,T,1}
+const OptimizerBE{T} = LBFGSOptimizer{typeof(DZOptimization.NULL_CONSTRAINT),
+    RKOCEvaluatorBE{T},RungeKuttaToolKit.RKOCEvaluatorBEAdjoint{T},QuadraticLineSearch,T,1}
+const OptimizerBI{T} = LBFGSOptimizer{typeof(DZOptimization.NULL_CONSTRAINT),
+    RKOCEvaluatorBI{T},RungeKuttaToolKit.RKOCEvaluatorBIAdjoint{T},QuadraticLineSearch,T,1}
+
+
+@assert length(ARGS) == 4
+const MODE = ARGS[1]
+@assert length(MODE) == 4
+const RESIDUAL_SCORE_THRESHOLD = parse(Int, ARGS[2])
+@assert 0 <= RESIDUAL_SCORE_THRESHOLD <= 9999
+const GRADIENT_SCORE_THRESHOLD = parse(Int, ARGS[3])
+@assert 0 <= GRADIENT_SCORE_THRESHOLD <= 9999
+const NORM_SCORE_THRESHOLD = parse(Int, ARGS[4])
+@assert 0 <= NORM_SCORE_THRESHOLD <= 9999
+
+
+@static if MODE[3:4] == "M1"
+    const FloatType = Float64x2
+    const NEXT_MODE = MODE[1:2] * "M2"
 end
 
 
-function read_rktk_search_file(filepath::AbstractString)
-    m = match(RKTK_COMPLETE_FILENAME_REGEX, basename(filepath))
-    @assert !isnothing(m)
-    order = parse(Int, m[1]; base=10)
-    num_stages = parse(Int, m[2]; base=10)
-    id = parse(UInt64, m[6]; base=16)
-
-    @assert isfile(filepath)
-    parts = split(read(filepath, String), "\n\n")
-    @assert length(parts) == 3
-    initial_part, table, final_part = parts
-
-    initial_lines = split(initial_part, '\n')
-    final_lines = split(final_part, '\n')
-    @assert length(initial_lines) + 1 == length(final_lines)
-    @assert isempty(final_lines[end])
-    initial_point = parse.(Float64, initial_lines)
-    final_point = parse.(Float64, final_lines[1:end-1])
-
-    table_entries = split(split(table, '\n')[end], '|')
-    @assert length(table_entries) == 7
-    @assert isempty(table_entries[1])
-    iteration_count = parse(Int, table_entries[2])
-
-    return (order, num_stages, id, initial_point, final_point, iteration_count)
+@static if MODE[1:2] == "AE"
+    const OptimizerType = OptimizerAE{FloatType}
+    const EvaluatorType = RKOCEvaluatorAE{FloatType}
+elseif MODE[1:2] == "AI"
+    const OptimizerType = OptimizerAI{FloatType}
+    const EvaluatorType = RKOCEvaluatorAI{FloatType}
+elseif MODE[1:2] == "BE"
+    const OptimizerType = OptimizerBE{FloatType}
+    const EvaluatorType = RKOCEvaluatorBE{FloatType}
+elseif MODE[1:2] == "BI"
+    const OptimizerType = OptimizerBI{FloatType}
+    const EvaluatorType = RKOCEvaluatorBI{FloatType}
 end
 
 
-const NORM_LIMIT = Float64x2(10.0)
+const RKTK_TXT_FILENAME_REGEX =
+    r"^RKTK-([0-9]{2})-([0-9]{2})-([AB][EI][MX][0-9])-([0-9]{4})-([0-9]{4})-([0-9]{4}|FAIL)-([0-9A-Fa-f]{16})\.txt$"
+const RKTK_JLS_FILENAME_REGEX =
+    r"^RKTK-([0-9]{2})-([0-9]{2})-([AB][EI][MX][0-9])-([0-9]{4})-([0-9]{4})-([0-9]{4})-([0-9]{12})-([0-9A-Fa-f]{16})\.jls$"
+
+
+const RKTKRecord = Tuple{OptimizerType,UInt64,Vector{Pair{String,Int}}}
+
+
+function compute_scores(optimizer::OptimizerType)
+    num_residuals = length(optimizer.objective_function.residuals)
+    num_variables = length(optimizer.current_point)
+    rms_residual = sqrt(optimizer.current_objective_value[] / num_residuals)
+    rms_gradient = sqrt(norm2(optimizer.current_gradient) / num_variables)
+    rms_coeff = sqrt(norm2(optimizer.current_point) / num_variables)
+    residual_score = round(Int,
+        clamp(-500 * log10(Float64(rms_residual)), 0.0, 9999.0))
+    gradient_score = round(Int,
+        clamp(-500 * log10(Float64(rms_gradient)), 0.0, 9999.0))
+    coeff_score = round(Int,
+        clamp(10000 - 2500 * log10(Float64(rms_coeff)), 0.0, 9999.0))
+    return (residual_score, gradient_score, coeff_score)
+end
+
+
+function compute_jls_filename(order::Int, num_stages::Int, record::RKTKRecord)
+    optimizer, seed, iteration_counts = record
+    residual_score, gradient_score, norm_score = compute_scores(optimizer)
+    return @sprintf("RKTK-%02d-%02d-%s-%04d-%04d-%04d-%012d-%016X.jls",
+        order, num_stages, NEXT_MODE,
+        residual_score, gradient_score, norm_score,
+        sum(n for (_, n) in iteration_counts), seed)
+end
 
 
 function main()
 
-    @assert length(ARGS) == 1
-    (order, num_stages, id, _, final_point, _) = read_rktk_search_file(ARGS[1])
+    orders = BitSet()
+    stages = BitSet()
+    available_txt_files = Dict{UInt64,String}()
+    available_jls_files = Dict{UInt64,String}()
 
-    evaluator = RKOCEvaluator{Float64x2}(order, num_stages)
-    opt = LBFGSOptimizer(evaluator, evaluator', QuadraticLineSearch(),
-        Float64x2.(final_point), sqrt(length(final_point) * eps(Float64x2)),
-        length(final_point))
-    norm_bound = NORM_LIMIT * NORM_LIMIT * length(opt.current_point)
+    for filename in readdir()
 
-    print_status(opt; force=true)
-    checkpoint = @sprintf("RKTK-REFINE-%02d-%02d-%016X-%012d.jls",
-        order, num_stages, id, opt.iteration_count[])
-    serialize(checkpoint, opt)
-    while !opt.has_terminated[]
-        if norm2(opt.current_point) > norm_bound
-            break
+        m = match(RKTK_TXT_FILENAME_REGEX, filename)
+        if !isnothing(m)
+
+            order = parse(Int, m[1]; base=10)
+            push!(orders, order)
+            @assert isone(length(orders))
+
+            num_stages = parse(Int, m[2]; base=10)
+            push!(stages, num_stages)
+            @assert isone(length(stages))
+
+            mode = m[3]
+            residual_score = parse(Int, m[4]; base=10)
+            gradient_score = parse(Int, m[5]; base=10)
+            norm_score = (m[6] == "FAIL") ? nothing : parse(Int, m[6])
+            seed = parse(UInt64, m[7]; base=16)
+
+            if ((mode == MODE) &&
+                (residual_score >= RESIDUAL_SCORE_THRESHOLD) &&
+                (gradient_score >= GRADIENT_SCORE_THRESHOLD) &&
+                (!isnothing(norm_score)) &&
+                (norm_score >= NORM_SCORE_THRESHOLD))
+
+                @assert !haskey(available_txt_files, seed)
+                available_txt_files[seed] = filename
+            end
         end
-        step!(opt)
-        if opt.iteration_count[] % 1000 == 0
-            print_status(opt; force=true)
-            rm(checkpoint)
-            checkpoint = @sprintf("RKTK-REFINE-%02d-%02d-%016X-%012d.jls",
-                order, num_stages, id, opt.iteration_count[])
-            serialize(checkpoint, opt)
-        else
-            print_status(opt; force=false)
+
+        m = match(RKTK_JLS_FILENAME_REGEX, filename)
+        if !isnothing(m)
+
+            order = parse(Int, m[1]; base=10)
+            push!(orders, order)
+            @assert isone(length(orders))
+
+            num_stages = parse(Int, m[2]; base=10)
+            push!(stages, num_stages)
+            @assert isone(length(stages))
+
+            mode = m[3]
+            residual_score = parse(Int, m[4]; base=10)
+            gradient_score = parse(Int, m[5]; base=10)
+            norm_score = parse(Int, m[6]; base=10)
+            total_iteration_count = parse(Int, m[7]; base=10)
+            seed = parse(UInt64, m[8]; base=16)
+
+            if ((mode == NEXT_MODE) &&
+                (residual_score >= RESIDUAL_SCORE_THRESHOLD) &&
+                (gradient_score >= GRADIENT_SCORE_THRESHOLD) &&
+                (norm_score >= NORM_SCORE_THRESHOLD))
+
+                @assert !haskey(available_jls_files, seed)
+                available_jls_files[seed] = filename
+            end
         end
     end
-    print_status(opt; force=true)
-    rm(checkpoint)
-    checkpoint = @sprintf("RKTK-REFINE-%02d-%02d-%016X-%012d.jls",
-        order, num_stages, id, opt.iteration_count[])
-    serialize(checkpoint, opt)
 
+    if isempty(available_txt_files) && isempty(available_jls_files)
+        @printf("No eligible RKTK files found.\n")
+        return nothing
+    end
+
+    order = first(orders)
+    num_stages = first(stages)
+    @printf("Performing RKTK-%02d-%02d-%s refinement.\n",
+        order, num_stages, NEXT_MODE)
+    @printf("Using %04d-%04d-%04d score threshold.\n",
+        RESIDUAL_SCORE_THRESHOLD, GRADIENT_SCORE_THRESHOLD,
+        NORM_SCORE_THRESHOLD)
+    @printf("Found %d eligible .txt files.\n", length(available_txt_files))
+    @printf("Found %d eligible .jls files.\n", length(available_jls_files))
+
+    records = Vector{RKTKRecord}()
+
+    for (seed, filename) in available_txt_files
+        if !haskey(available_jls_files, seed)
+            parts = split(read(filename, String), "\n\n")
+            @assert length(parts) == 3
+            initial_part, table, final_part = parts
+
+            initial_lines = split(initial_part, '\n')
+            final_lines = split(final_part, '\n')
+            @assert length(initial_lines) + 1 == length(final_lines)
+            @assert isempty(final_lines[end])
+            initial_point = parse.(Float64, initial_lines)
+            final_point = parse.(Float64, final_lines[1:end-1])
+
+            table_entries = strip.(split(split(table, '\n')[end], '|'))
+            @assert length(table_entries) == 7
+            @assert isempty(table_entries[1])
+            iteration_count = parse(Int, table_entries[2])
+
+            evaluator = EvaluatorType(order, num_stages)
+            optimizer = LBFGSOptimizer(evaluator, evaluator',
+                QuadraticLineSearch(), FloatType.(final_point),
+                sqrt(eps(FloatType) * length(final_point)),
+                length(final_point))
+
+            @assert MODE[3:4] == "M1"
+            push!(records, (optimizer, seed,
+                [MODE => iteration_count, NEXT_MODE => 0]))
+        end
+    end
+
+    for (_, filename) in available_jls_files
+        push!(records, deserialize(filename))
+    end
+
+    @printf("Loaded %d records.\n", length(records))
+
+    for record in records
+        _, seed, _ = record
+        if !haskey(available_jls_files, seed)
+            filename = compute_jls_filename(order, num_stages, record)
+            @assert !isfile(filename)
+            serialize(filename, record)
+            available_jls_files[seed] = filename
+        end
+    end
+
+    while true
+        @threads for record in records
+            optimizer, seed, iteration_counts = record
+
+            old_scores = compute_scores(optimizer)
+            start_iteration = optimizer.iteration_count[]
+            start_time = time_ns()
+            for _ = 1:100
+                if optimizer.has_terminated[]
+                    break
+                end
+                step!(optimizer)
+            end
+            end_time = time_ns()
+            end_iteration = optimizer.iteration_count[]
+            new_scores = compute_scores(optimizer)
+
+            @assert end_iteration > start_iteration
+
+            elapsed_time = (end_time - start_time) / 1.0e9
+            @printf("Refined seed %016X from %04d-%04d-%04d to %04d-%04d-%04d.\nPerformed %d iterations (%g iterations per second).\n",
+                seed, old_scores..., new_scores..., end_iteration - start_iteration, (end_iteration - start_iteration) / elapsed_time)
+
+            mode, _ = iteration_counts[end]
+            @assert mode == NEXT_MODE
+            iteration_counts[end] = mode => optimizer.iteration_count[]
+            filename = compute_jls_filename(order, num_stages, record)
+            @assert !isfile(filename)
+            serialize(filename, record)
+            rm(available_jls_files[seed])
+            available_jls_files[seed] = filename
+            @printf("Wrote %s to disk.\n", filename)
+        end
+        filter!((optimizer, _, _) -> !optimizer.has_terminated[], records)
+    end
 end
 
 
