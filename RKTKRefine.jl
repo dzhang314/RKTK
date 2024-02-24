@@ -31,6 +31,62 @@ const NORM_SCORE_THRESHOLD = parse(Int, ARGS[4])
 @static if MODE[3:4] == "M1"
     const FloatType = Float64x2
     const NEXT_MODE = MODE[1:2] * "M2"
+elseif MODE[3:4] == "M2"
+    const FloatType = Float64x3
+    const NEXT_MODE = MODE[1:2] * "M3"
+elseif MODE[3:4] == "M3"
+    const FloatType = Float64x4
+    const NEXT_MODE = MODE[1:2] * "M4"
+elseif MODE[3:4] == "M4"
+    const FloatType = Float64x5
+    const NEXT_MODE = MODE[1:2] * "M5"
+elseif MODE[3:4] == "M5"
+    const FloatType = Float64x6
+    const NEXT_MODE = MODE[1:2] * "M6"
+elseif MODE[3:4] == "M6"
+    const FloatType = Float64x7
+    const NEXT_MODE = MODE[1:2] * "M7"
+elseif MODE[3:4] == "M7"
+    const FloatType = Float64x8
+    const NEXT_MODE = MODE[1:2] * "M8"
+elseif MODE[3:4] == "M8"
+    const FloatType = BigFloat
+    setprecision(BigFloat, 512)
+    const NEXT_MODE = MODE[1:2] * "X1"
+elseif MODE[3:4] == "X1"
+    const FloatType = BigFloat
+    setprecision(BigFloat, 1024)
+    const NEXT_MODE = MODE[1:2] * "X2"
+elseif MODE[3:4] == "X2"
+    const FloatType = BigFloat
+    setprecision(BigFloat, 2048)
+    const NEXT_MODE = MODE[1:2] * "X3"
+elseif MODE[3:4] == "X3"
+    const FloatType = BigFloat
+    setprecision(BigFloat, 4096)
+    const NEXT_MODE = MODE[1:2] * "X4"
+elseif MODE[3:4] == "X4"
+    const FloatType = BigFloat
+    setprecision(BigFloat, 8192)
+    const NEXT_MODE = MODE[1:2] * "X5"
+elseif MODE[3:4] == "X5"
+    const FloatType = BigFloat
+    setprecision(BigFloat, 16384)
+    const NEXT_MODE = MODE[1:2] * "X6"
+elseif MODE[3:4] == "X6"
+    const FloatType = BigFloat
+    setprecision(BigFloat, 32768)
+    const NEXT_MODE = MODE[1:2] * "X7"
+elseif MODE[3:4] == "X7"
+    const FloatType = BigFloat
+    setprecision(BigFloat, 65536)
+    const NEXT_MODE = MODE[1:2] * "X8"
+elseif MODE[3:4] == "X8"
+    const FloatType = BigFloat
+    setprecision(BigFloat, 131072)
+    const NEXT_MODE = MODE[1:2] * "X9"
+else
+    error("Unrecognized mode $MODE.")
 end
 
 
