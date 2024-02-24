@@ -303,7 +303,7 @@ function main()
     for record in records
         _, seed, _ = record
         if !haskey(available_next_jls_files, seed)
-            filename = compute_jls_filename(order, num_stages, record)
+            filename = compute_jls_filename(order, num_stages, false, record)
             @assert !isfile(filename)
             serialize(filename, record)
             available_next_jls_files[seed] = filename
