@@ -143,7 +143,7 @@ function compute_jls_filename(
         order, num_stages, NEXT_MODE, residual_score, gradient_score,
         failed ? "FAIL" : @sprintf("%04d", norm_score),
         lpad(sum(n for (_, n) in iteration_counts), 12,
-            optimizer.has_terminated[] ? '0' : 'X'), seed)
+            (failed || optimizer.has_terminated[]) ? '0' : 'X'), seed)
 end
 
 
