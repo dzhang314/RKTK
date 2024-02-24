@@ -126,7 +126,8 @@ function search(
         if opt.has_terminated[]
             break
         end
-        if any(abs(coeff) > 1024.0 for coeff in opt.current_point)
+        if (any(!(abs(c) <= 1024.0) for c in opt.objective_function.A) ||
+            any(!(abs(c) <= 1024.0) for c in opt.objective_function.b))
             failed = true
             break
         end

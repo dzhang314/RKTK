@@ -112,7 +112,7 @@ end
 const RKTK_TXT_FILENAME_REGEX =
     r"^RKTK-([0-9]{2})-([0-9]{2})-([AB][EI][MX][0-9])-([0-9]{4})-([0-9]{4})-([0-9]{4}|FAIL)-([0-9A-Fa-f]{16})\.txt$"
 const RKTK_JLS_FILENAME_REGEX =
-    r"^RKTK-([0-9]{2})-([0-9]{2})-([AB][EI][MX][0-9])-([0-9]{4})-([0-9]{4})-([0-9]{4})-([0-9]{12})-([0-9A-Fa-f]{16})\.jls$"
+    r"^RKTK-([0-9]{2})-([0-9]{2})-([AB][EI][MX][0-9])-([0-9]{4})-([0-9]{4})-([0-9]{4})-([0-9X]{12})-([0-9A-Fa-f]{16})\.jls$"
 
 
 const RKTKRecord = Tuple{OptimizerType,UInt64,Vector{Pair{String,Int}}}
@@ -134,12 +134,14 @@ function compute_scores(optimizer::OptimizerType)
 end
 
 
-function compute_jls_filename(order::Int, num_stages::Int, record::RKTKRecord)
+function compute_jls_filename(
+    order::Int, num_stages::Int, failed::Bool, record::RKTKRecord
+)
     optimizer, seed, iteration_counts = record
     residual_score, gradient_score, norm_score = compute_scores(optimizer)
-    return @sprintf("RKTK-%02d-%02d-%s-%04d-%04d-%04d-%s-%016X.jls",
-        order, num_stages, NEXT_MODE,
-        residual_score, gradient_score, norm_score,
+    return @sprintf("RKTK-%02d-%02d-%s-%04d-%04d-%s-%s-%016X.jls",
+        order, num_stages, NEXT_MODE, residual_score, gradient_score,
+        failed ? "FAIL" : @sprintf("%04d", norm_score),
         lpad(sum(n for (_, n) in iteration_counts), 12,
             optimizer.has_terminated[] ? '0' : 'X'), seed)
 end
@@ -197,7 +199,7 @@ function main()
             residual_score = parse(Int, m[4]; base=10)
             gradient_score = parse(Int, m[5]; base=10)
             norm_score = parse(Int, m[6]; base=10)
-            total_iteration_count = parse(Int, m[7]; base=10)
+            total_iteration_count = parse(Int, lstrip(m[7], 'X'); base=10)
             seed = parse(UInt64, m[8]; base=16)
 
             if ((mode == MODE) &&
@@ -311,15 +313,24 @@ function main()
     while !isempty(records)
         @threads for record in records
             optimizer, seed, iteration_counts = record
+            @assert !optimizer.has_terminated[]
 
             old_scores = compute_scores(optimizer)
+            failed = false
             start_iteration = optimizer.iteration_count[]
             start_time = time_ns()
             for _ = 1:100
+                step!(optimizer)
                 if optimizer.has_terminated[]
                     break
                 end
-                step!(optimizer)
+                if (any(!(abs(c) <= 1024.0)
+                        for c in optimizer.objective_function.A) ||
+                    any(!(abs(c) <= 1024.0)
+                        for c in optimizer.objective_function.b))
+                    failed = true
+                    break
+                end
             end
             end_time = time_ns()
             end_iteration = optimizer.iteration_count[]
@@ -337,7 +348,7 @@ function main()
             mode, _ = iteration_counts[end]
             @assert mode == NEXT_MODE
             iteration_counts[end] = mode => optimizer.iteration_count[]
-            filename = compute_jls_filename(order, num_stages, record)
+            filename = compute_jls_filename(order, num_stages, failed, record)
             @assert !isfile(filename)
             serialize(filename, record)
             rm(available_next_jls_files[seed])
