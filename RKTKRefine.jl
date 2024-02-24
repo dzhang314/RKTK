@@ -147,6 +147,7 @@ function main()
     stages = BitSet()
     available_txt_files = Dict{UInt64,String}()
     available_jls_files = Dict{UInt64,String}()
+    available_next_jls_files = Dict{UInt64,String}()
 
     for filename in readdir()
 
@@ -172,7 +173,6 @@ function main()
                 (gradient_score >= GRADIENT_SCORE_THRESHOLD) &&
                 (!isnothing(norm_score)) &&
                 (norm_score >= NORM_SCORE_THRESHOLD))
-
                 @assert !haskey(available_txt_files, seed)
                 available_txt_files[seed] = filename
             end
@@ -196,18 +196,27 @@ function main()
             total_iteration_count = parse(Int, m[7]; base=10)
             seed = parse(UInt64, m[8]; base=16)
 
+            if ((mode == MODE) &&
+                (residual_score >= RESIDUAL_SCORE_THRESHOLD) &&
+                (gradient_score >= GRADIENT_SCORE_THRESHOLD) &&
+                (norm_score >= NORM_SCORE_THRESHOLD))
+                @assert !haskey(available_jls_files, seed)
+                available_jls_files[seed] = filename
+            end
+
             if ((mode == NEXT_MODE) &&
                 (residual_score >= RESIDUAL_SCORE_THRESHOLD) &&
                 (gradient_score >= GRADIENT_SCORE_THRESHOLD) &&
                 (norm_score >= NORM_SCORE_THRESHOLD))
-
-                @assert !haskey(available_jls_files, seed)
-                available_jls_files[seed] = filename
+                @assert !haskey(available_next_jls_files, seed)
+                available_next_jls_files[seed] = filename
             end
         end
     end
 
-    if isempty(available_txt_files) && isempty(available_jls_files)
+    if (isempty(available_txt_files) &&
+        isempty(available_jls_files) &&
+        isempty(available_next_jls_files))
         @printf("No eligible RKTK files found.\n")
         return nothing
     end
@@ -225,7 +234,12 @@ function main()
     records = Vector{RKTKRecord}()
 
     for (seed, filename) in available_txt_files
-        if !haskey(available_jls_files, seed)
+        if (!haskey(available_jls_files, seed) &&
+            !haskey(available_next_jls_files, seed))
+
+            # Text files should only be produced at machine precision.
+            @assert MODE[3:4] == "M1"
+
             parts = split(read(filename, String), "\n\n")
             @assert length(parts) == 3
             initial_part, table, final_part = parts
@@ -248,13 +262,29 @@ function main()
                 sqrt(eps(FloatType) * length(final_point)),
                 length(final_point))
 
-            @assert MODE[3:4] == "M1"
             push!(records, (optimizer, seed,
                 [MODE => iteration_count, NEXT_MODE => 0]))
         end
     end
 
-    for (_, filename) in available_jls_files
+    for (seed, filename) in available_jls_files
+        if !haskey(available_next_jls_files, seed)
+            record = deserialize(filename)
+            @assert length(record) == 3
+            final_point = record[1].current_point
+            @assert record[2] == seed
+            iteration_counts = record[3]
+            evaluator = EvaluatorType(order, num_stages)
+            optimizer = LBFGSOptimizer(evaluator, evaluator',
+                QuadraticLineSearch(), FloatType.(final_point),
+                sqrt(eps(FloatType) * length(final_point)),
+                length(final_point))
+            push!(iteration_counts, NEXT_MODE => 0)
+            push!(records, (optimizer, seed, iteration_counts))
+        end
+    end
+
+    for (_, filename) in available_next_jls_files
         push!(records, deserialize(filename))
     end
 
@@ -262,11 +292,11 @@ function main()
 
     for record in records
         _, seed, _ = record
-        if !haskey(available_jls_files, seed)
+        if !haskey(available_next_jls_files, seed)
             filename = compute_jls_filename(order, num_stages, record)
             @assert !isfile(filename)
             serialize(filename, record)
-            available_jls_files[seed] = filename
+            available_next_jls_files[seed] = filename
         end
     end
 
@@ -302,8 +332,8 @@ function main()
             filename = compute_jls_filename(order, num_stages, record)
             @assert !isfile(filename)
             serialize(filename, record)
-            rm(available_jls_files[seed])
-            available_jls_files[seed] = filename
+            rm(available_next_jls_files[seed])
+            available_next_jls_files[seed] = filename
             @printf("Wrote %s to disk.\n", filename)
         end
         filter!(((optimizer, _, _),) -> !optimizer.has_terminated[], records)
