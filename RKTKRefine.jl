@@ -7,14 +7,8 @@ using RungeKuttaToolKit
 using Serialization
 
 
-const OptimizerAE{T} = LBFGSOptimizer{typeof(DZOptimization.NULL_CONSTRAINT),
-    RKOCEvaluatorAE{T},RungeKuttaToolKit.RKOCEvaluatorAEAdjoint{T},QuadraticLineSearch,T,1}
-const OptimizerAI{T} = LBFGSOptimizer{typeof(DZOptimization.NULL_CONSTRAINT),
-    RKOCEvaluatorAI{T},RungeKuttaToolKit.RKOCEvaluatorAIAdjoint{T},QuadraticLineSearch,T,1}
-const OptimizerBE{T} = LBFGSOptimizer{typeof(DZOptimization.NULL_CONSTRAINT),
-    RKOCEvaluatorBE{T},RungeKuttaToolKit.RKOCEvaluatorBEAdjoint{T},QuadraticLineSearch,T,1}
-const OptimizerBI{T} = LBFGSOptimizer{typeof(DZOptimization.NULL_CONSTRAINT),
-    RKOCEvaluatorBI{T},RungeKuttaToolKit.RKOCEvaluatorBIAdjoint{T},QuadraticLineSearch,T,1}
+const COUNT_ONLY = ("--count-only" in ARGS)
+filter!(arg -> arg != "--count-only", ARGS)
 
 
 @assert length(ARGS) == 4
@@ -26,6 +20,16 @@ const GRADIENT_SCORE_THRESHOLD = parse(Int, ARGS[3])
 @assert 0 <= GRADIENT_SCORE_THRESHOLD <= 9999
 const NORM_SCORE_THRESHOLD = parse(Int, ARGS[4])
 @assert 0 <= NORM_SCORE_THRESHOLD <= 9999
+
+
+const OptimizerAE{T} = LBFGSOptimizer{typeof(DZOptimization.NULL_CONSTRAINT),
+    RKOCEvaluatorAE{T},RungeKuttaToolKit.RKOCEvaluatorAEAdjoint{T},QuadraticLineSearch,T,1}
+const OptimizerAI{T} = LBFGSOptimizer{typeof(DZOptimization.NULL_CONSTRAINT),
+    RKOCEvaluatorAI{T},RungeKuttaToolKit.RKOCEvaluatorAIAdjoint{T},QuadraticLineSearch,T,1}
+const OptimizerBE{T} = LBFGSOptimizer{typeof(DZOptimization.NULL_CONSTRAINT),
+    RKOCEvaluatorBE{T},RungeKuttaToolKit.RKOCEvaluatorBEAdjoint{T},QuadraticLineSearch,T,1}
+const OptimizerBI{T} = LBFGSOptimizer{typeof(DZOptimization.NULL_CONSTRAINT),
+    RKOCEvaluatorBI{T},RungeKuttaToolKit.RKOCEvaluatorBIAdjoint{T},QuadraticLineSearch,T,1}
 
 
 @static if MODE[3:4] == "M1"
@@ -230,6 +234,10 @@ function main()
         NORM_SCORE_THRESHOLD)
     @printf("Found %d eligible .txt files.\n", length(available_txt_files))
     @printf("Found %d eligible .jls files.\n", length(available_jls_files))
+
+    if COUNT_ONLY
+        return nothing
+    end
 
     records = Vector{RKTKRecord}()
 
