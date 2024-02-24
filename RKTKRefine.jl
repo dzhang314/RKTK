@@ -356,6 +356,11 @@ function main()
             @printf("Wrote %s to disk.\n", filename)
         end
         filter!(((optimizer, _, _),) -> !optimizer.has_terminated[], records)
+        filter!(((optimizer, _, _),) -> (
+                all(abs(c) <= 1024.0
+                    for c in optimizer.objective_function.A) &&
+                all(abs(c) <= 1024.0
+                    for c in optimizer.objective_function.b)), records)
     end
 end
 
