@@ -171,7 +171,7 @@ function main()
             mode = m[3]
             residual_score = parse(Int, m[4]; base=10)
             gradient_score = parse(Int, m[5]; base=10)
-            norm_score = (m[6] == "FAIL") ? nothing : parse(Int, m[6])
+            norm_score = (m[6] == "FAIL") ? nothing : parse(Int, m[6]; base=10)
             seed = parse(UInt64, m[7]; base=16)
 
             if ((mode == MODE) &&
@@ -203,6 +203,7 @@ function main()
             seed = parse(UInt64, m[8]; base=16)
 
             if ((mode == MODE) &&
+                (!('X' in m[7])) &&
                 (residual_score >= RESIDUAL_SCORE_THRESHOLD) &&
                 (gradient_score >= GRADIENT_SCORE_THRESHOLD) &&
                 (norm_score >= NORM_SCORE_THRESHOLD))
