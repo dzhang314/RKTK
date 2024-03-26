@@ -80,27 +80,27 @@ end
 
 @static if PARAMETERIZATION == :AE
     const RKOCEvaluator = RKOCEvaluatorAE{T}
-    const RKOCEvaluatorAdjoint = RungeKuttaToolKit.RKOCEvaluatorAdjointAE{T}
+    const RKOCEvaluatorAdjoint = RungeKuttaToolKit.RKOCEvaluatorAEAdjoint{T}
     @inline num_parameters(s::Int) = (s * (s - 1)) >> 1
 elseif PARAMETERIZATION == :AD
     const RKOCEvaluator = RKOCEvaluatorAD{T}
-    const RKOCEvaluatorAdjoint = RungeKuttaToolKit.RKOCEvaluatorAdjointAD{T}
+    const RKOCEvaluatorAdjoint = RungeKuttaToolKit.RKOCEvaluatorADAdjoint{T}
     @inline num_parameters(s::Int) = (s * (s + 1)) >> 1
 elseif PARAMETERIZATION == :AI
     const RKOCEvaluator = RKOCEvaluatorAI{T}
-    const RKOCEvaluatorAdjoint = RungeKuttaToolKit.RKOCEvaluatorAdjointAI{T}
+    const RKOCEvaluatorAdjoint = RungeKuttaToolKit.RKOCEvaluatorAIAdjoint{T}
     @inline num_parameters(s::Int) = s * s
 elseif PARAMETERIZATION == :BE
     const RKOCEvaluator = RKOCEvaluatorBE{T}
-    const RKOCEvaluatorAdjoint = RungeKuttaToolKit.RKOCEvaluatorAdjointBE{T}
+    const RKOCEvaluatorAdjoint = RungeKuttaToolKit.RKOCEvaluatorBEAdjoint{T}
     @inline num_parameters(s::Int) = (s * (s + 1)) >> 1
 elseif PARAMETERIZATION == :BD
     const RKOCEvaluator = RKOCEvaluatorBD{T}
-    const RKOCEvaluatorAdjoint = RungeKuttaToolKit.RKOCEvaluatorAdjointBD{T}
+    const RKOCEvaluatorAdjoint = RungeKuttaToolKit.RKOCEvaluatorBDAdjoint{T}
     @inline num_parameters(s::Int) = (s * (s + 3)) >> 1
 elseif PARAMETERIZATION == :BI
     const RKOCEvaluator = RKOCEvaluatorBI{T}
-    const RKOCEvaluatorAdjoint = RungeKuttaToolKit.RKOCEvaluatorAdjointBI{T}
+    const RKOCEvaluatorAdjoint = RungeKuttaToolKit.RKOCEvaluatorBIAdjoint{T}
     @inline num_parameters(s::Int) = s * (s + 1)
 end
 
