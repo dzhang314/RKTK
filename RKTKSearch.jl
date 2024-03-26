@@ -29,8 +29,7 @@ If two seeds are specified, they are treated as interval bounds (inclusive).
 
 
 const WRITE_FILE = !("--no-file" in ARGS)
-const WRITE_TERM = ("--no-file" in ARGS) || (
-    (stdout isa Base.TTY) && (nthreads() == 1))
+const WRITE_TERM = ((stdout isa Base.TTY) && (nthreads() == 1))
 filter!(arg -> (arg != "--no-file"), ARGS)
 
 
