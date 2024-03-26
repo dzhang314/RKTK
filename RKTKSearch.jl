@@ -7,30 +7,40 @@ using Printf
 using RungeKuttaToolKit
 
 
-const USAGE_STRING = """
-Usage: julia [jl_options] $PROGRAM_FILE <order> <num_stages> [seed] [seed]
-[jl_options] refers to Julia options, such as -O3 or --math-mode=fast.
+const EXIT_INVALID_ARG_COUNT = 1
+const EXIT_INVALID_ARG_FORMAT = 2
+const EXIT_INVALID_MODE_LENGTH = 3
+const EXIT_INVALID_PARAMETERIZATION = 4
+const EXIT_INVALID_PRECISION = 5
 
-<order> and <num_stages> must be positive integers between 1 and 99.
+
+const USAGE_STRING = """
+Usage: julia [jl_options] $PROGRAM_FILE <mode> <order> <stages> [seed] [seed]
+[jl_options] refers to Julia options, such as -O3 or --threads=8.
+
+<mode> is a four-character RKTK mode string, as explained in the RKTK manual.
+<order> and <stages> must be positive integers between 1 and 99.
 
 If no seed is specified, then a search is performed for every possible seed,
     starting from zero and counting up through every unsigned 64-bit integer.
 If one seed is specified, it is treated as an upper bound (inclusive).
-If two seeds are specified, they are treated as bounds (inclusive).
+If two seeds are specified, they are treated as interval bounds (inclusive).
 """
 
 
 const WRITE_FILE = !("--no-file" in ARGS)
 const WRITE_TERM = ("--no-file" in ARGS) || (
     (stdout isa Base.TTY) && (nthreads() == 1))
-const REQUESTED_EXPLICIT = ("--explicit" in ARGS)
-const REQUESTED_IMPLICIT = ("--implicit" in ARGS)
-const REQUESTED_EXACT_B = ("--exact-b" in ARGS)
-const REQUESTED_APPROXIMATE_B = ("--approximate-b" in ARGS)
-filter!(arg -> (
-        (arg != "--no-file") && (arg != "--explicit") &&
-        (arg != "--implicit") && (arg != "--exact-b") &&
-        (arg != "--approximate-b")), ARGS)
+filter!(arg -> (arg != "--no-file"), ARGS)
+
+
+if (length(ARGS) < 3) || (length(ARGS) > 5)
+    print(stderr, USAGE_STRING)
+    exit(EXIT_INVALID_ARG_COUNT)
+end
+
+
+include("./src/ParseMode.jl")
 
 
 function fprintln(io::IO, args...)
@@ -52,13 +62,13 @@ function fprint_status(io::IO, opt::LBFGSOptimizer; force::Bool=false)
                       (opt._history_count[] != history_count))
     if reset_occurred || force
         num_residuals = length(opt.objective_function.residuals)
-        num_variables = length(opt.current_point)
+        n = length(opt.current_point)
         fprintln(io, @sprintf("|%12d | %.8e | %.8e | %.8e | %.8e |%s",
             opt.iteration_count[],
             sqrt(opt.current_objective_value[] / num_residuals),
-            sqrt(norm2(opt.current_gradient) / num_variables),
+            sqrt(norm2(opt.current_gradient) / n),
             sqrt(maximum(abs, opt.current_point)),
-            sqrt(norm2(opt.delta_point) / num_variables),
+            sqrt(norm2(opt.delta_point) / n),
             reset_occurred ? " RESET" : ""))
     end
     return nothing
@@ -80,11 +90,10 @@ const TOTAL_ITERATION_COUNT = Atomic{Int}(0)
 
 
 function search(
-    evaluator, order::Int, num_stages::Int, mode::String, seed::UInt64
+    evaluator::RKOCEvaluator, order::Int, stages::Int, seed::UInt64
 )
-    @assert length(mode) == 4
-    filename = @sprintf("RKTK-%02d-%02d-%s-XXXX-XXXX-XXXX-%016X.txt",
-        order, num_stages, mode, seed)
+    filename = @sprintf("RKTK-%02d-%02d-%s%s-XXXX-XXXX-XXXX-%016X.txt",
+        order, stages, PARAMETERIZATION, PRECISION, seed)
     @assert length(filename) == 51
 
     if WRITE_FILE
@@ -97,19 +106,24 @@ function search(
         end
     end
 
-    num_variables =
-        (mode == "AEM1") ? (num_stages * (num_stages - 1)) >> 1 :
-        (mode == "BEM1") ? (num_stages * (num_stages + 1)) >> 1 :
-        (mode == "AIM1") ? num_stages * num_stages :
-        (mode == "BIM1") ? num_stages * (num_stages + 1) : 0
+    n = num_parameters(stages)
     opt = LBFGSOptimizer(evaluator, evaluator', QuadraticLineSearch(),
-        random_array(seed, Float64, num_variables),
-        sqrt(num_variables * eps(Float64)), num_variables)
+        random_array(seed, T, n), sqrt(n * eps(T)), n)
 
-    io = WRITE_FILE ? open(filename, "w") : devnull
+    @static if WRITE_FILE
+        io = open(filename, "w")
+    else
+        io = devnull
+    end
 
-    for x in opt.current_point
-        fprintln(io, @sprintf("%+.16e", x))
+    if T == Float64
+        for x in opt.current_point
+            fprintln(io, @sprintf("%+.16e", x))
+        end
+    else
+        for x in opt.current_point
+            fprintln(io, x)
+        end
     end
 
     fprintln(io)
@@ -138,8 +152,14 @@ function search(
 
     fprintln(io)
 
-    for x in opt.current_point
-        fprintln(io, @sprintf("%+.16e", x))
+    if T == Float64
+        for x in opt.current_point
+            fprintln(io, @sprintf("%+.16e", x))
+        end
+    else
+        for x in opt.current_point
+            fprintln(io, x)
+        end
     end
 
     if WRITE_FILE
@@ -147,19 +167,16 @@ function search(
     end
 
     num_residuals = length(evaluator.residuals)
-    rms_residual = sqrt(opt.current_objective_value[] / num_residuals)
-    rms_gradient = sqrt(norm2(opt.current_gradient) / num_variables)
-    rms_coeff = sqrt(norm2(opt.current_point) / num_variables)
-    residual_score = round(Int,
-        clamp(-500 * log10(rms_residual), 0.0, 9999.0))
-    gradient_score = round(Int,
-        clamp(-500 * log10(rms_gradient), 0.0, 9999.0))
-    coeff_score = round(Int,
-        clamp(10000 - 2500 * log10(rms_coeff), 0.0, 9999.0))
+    rms_residual = sqrt(Float64(opt.current_objective_value[]) / num_residuals)
+    rms_gradient = sqrt(Float64(norm2(opt.current_gradient)) / n)
+    rms_coeff = sqrt(Float64(norm2(opt.current_point)) / n)
+    residual_score = round(Int, clamp(-500 * log10(rms_residual), 0.0, 9999.0))
+    gradient_score = round(Int, clamp(-500 * log10(rms_gradient), 0.0, 9999.0))
+    coeff_score = round(Int, clamp(10000 - 2500 * log10(rms_coeff), 0.0, 9999.0))
 
-    finalname = @sprintf("RKTK-%02d-%02d-%s-%04d-%04d-%s-%016X.txt",
-        order, num_stages, mode, residual_score, gradient_score,
-        failed ? "FAIL" : @sprintf("%04d", coeff_score), seed)
+    finalname = @sprintf("RKTK-%02d-%02d-%s%s-%04d-%04d-%s-%016X.txt",
+        order, stages, PARAMETERIZATION, PRECISION, residual_score,
+        gradient_score, failed ? "FAIL" : @sprintf("%04d", coeff_score), seed)
     if WRITE_FILE
         mv(filename, finalname)
     end
@@ -174,71 +191,21 @@ end
 const SEED_COUNTER = Atomic{UInt64}(0)
 
 
-function get_mode()
-    @static if REQUESTED_IMPLICIT && !REQUESTED_EXPLICIT
-        @static if REQUESTED_APPROXIMATE_B && !REQUESTED_EXACT_B
-            return "BI"
-        else
-            return "AI"
+function thread_work(order::Int, stages::Int, max_seed::UInt64)
+    evaluator = RKOCEvaluator(order, stages)
+    while true
+        seed = atomic_add!(SEED_COUNTER, one(UInt64))
+        if seed > max_seed
+            break
         end
-    else
-        @static if REQUESTED_APPROXIMATE_B && !REQUESTED_EXACT_B
-            return "BE"
-        else
-            return "AE"
-        end
+        search(evaluator, order, stages, seed)
     end
 end
 
 
-function thread_work(order::Int, num_stages::Int, max_seed::UInt64)
-    @static if REQUESTED_IMPLICIT && !REQUESTED_EXPLICIT
-        @static if REQUESTED_APPROXIMATE_B && !REQUESTED_EXACT_B
-            evaluator = RKOCEvaluatorBI{Float64}(order, num_stages)
-            while true
-                seed = atomic_add!(SEED_COUNTER, one(UInt64))
-                if seed > max_seed
-                    break
-                end
-                search(evaluator, order, num_stages, "BIM1", seed)
-            end
-        else
-            evaluator = RKOCEvaluatorAI{Float64}(order, num_stages)
-            while true
-                seed = atomic_add!(SEED_COUNTER, one(UInt64))
-                if seed > max_seed
-                    break
-                end
-                search(evaluator, order, num_stages, "AIM1", seed)
-            end
-        end
-    else
-        @static if REQUESTED_APPROXIMATE_B && !REQUESTED_EXACT_B
-            evaluator = RKOCEvaluatorBE{Float64}(order, num_stages)
-            while true
-                seed = atomic_add!(SEED_COUNTER, one(UInt64))
-                if seed > max_seed
-                    break
-                end
-                search(evaluator, order, num_stages, "BEM1", seed)
-            end
-        else
-            evaluator = RKOCEvaluatorAE{Float64}(order, num_stages)
-            while true
-                seed = atomic_add!(SEED_COUNTER, one(UInt64))
-                if seed > max_seed
-                    break
-                end
-                search(evaluator, order, num_stages, "AEM1", seed)
-            end
-        end
-    end
-end
-
-
-function main(order::Int, num_stages::Int, min_seed::UInt64, max_seed::UInt64)
+function main(order::Int, stages::Int, min_seed::UInt64, max_seed::UInt64)
     if WRITE_FILE
-        dirname = @sprintf("RKTK-%02d-%02d-%s", order, num_stages, get_mode())
+        dirname = @sprintf("RKTK-%02d-%02d-%s", order, stages, PARAMETERIZATION)
         if basename(pwd()) != dirname
             if !isdir(dirname)
                 mkdir(dirname)
@@ -249,7 +216,7 @@ function main(order::Int, num_stages::Int, min_seed::UInt64, max_seed::UInt64)
     SEED_COUNTER[] = min_seed
     start_time = time_ns()
     @threads for _ = 1:nthreads()
-        thread_work(order, num_stages, max_seed)
+        thread_work(order, stages, max_seed)
     end
     end_time = time_ns()
     elapsed_time = (end_time - start_time) / 1.0e9
@@ -260,27 +227,27 @@ end
 
 function parse_arguments()
     try
-        @assert 2 <= length(ARGS) <= 4
-        order = parse(Int, ARGS[1])
+        @assert 3 <= length(ARGS) <= 5
+        order = parse(Int, ARGS[2])
         @assert 0 < order < 100
-        num_stages = parse(Int, ARGS[2])
-        @assert 0 < num_stages < 100
+        stages = parse(Int, ARGS[3])
+        @assert 0 < stages < 100
         min_seed = typemin(UInt64)
         max_seed = typemax(UInt64)
-        if length(ARGS) == 3
-            max_seed = parse(UInt64, ARGS[3])
-        elseif length(ARGS) == 4
-            min_seed = parse(UInt64, ARGS[3])
+        if length(ARGS) == 4
             max_seed = parse(UInt64, ARGS[4])
+        elseif length(ARGS) == 5
+            min_seed = parse(UInt64, ARGS[4])
+            max_seed = parse(UInt64, ARGS[5])
         end
         @assert min_seed <= max_seed
-        return (order, num_stages, min_seed, max_seed)
+        return (order, stages, min_seed, max_seed)
     catch e
         if typeof(e) in [
             ArgumentError, AssertionError, BoundsError, OverflowError
         ]
             print(USAGE_STRING)
-            exit(1)
+            exit(EXIT_INVALID_ARG_FORMAT)
         else
             rethrow(e)
         end
