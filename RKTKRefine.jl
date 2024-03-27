@@ -113,7 +113,7 @@ function main_rktk_file(filename::String)
 
     mv(filename, finalname)
 
-    println("Wrote results to $finalname.")
+    println("Wrote results to: $finalname")
 end
 
 

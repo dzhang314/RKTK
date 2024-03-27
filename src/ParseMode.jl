@@ -134,26 +134,44 @@ end
 @static if PARAMETERIZATION == :AE
     const RKOCEvaluator = RKOCEvaluatorAE{T}
     const RKOCEvaluatorAdjoint = RungeKuttaToolKit.RKOCEvaluatorAEAdjoint{T}
+    const RKOCResidualEvaluator = RKOCResidualEvaluatorAE{T}
+    const RKOCResidualEvaluatorAdjoint =
+        RungeKuttaToolKit.RKOCResidualEvaluatorAEAdjoint{T}
     @inline num_parameters(s::Int) = (s * (s - 1)) >> 1
 elseif PARAMETERIZATION == :AD
     const RKOCEvaluator = RKOCEvaluatorAD{T}
     const RKOCEvaluatorAdjoint = RungeKuttaToolKit.RKOCEvaluatorADAdjoint{T}
+    const RKOCResidualEvaluator = RKOCResidualEvaluatorAD{T}
+    const RKOCResidualEvaluatorAdjoint =
+        RungeKuttaToolKit.RKOCResidualEvaluatorADAdjoint{T}
     @inline num_parameters(s::Int) = (s * (s + 1)) >> 1
 elseif PARAMETERIZATION == :AI
     const RKOCEvaluator = RKOCEvaluatorAI{T}
     const RKOCEvaluatorAdjoint = RungeKuttaToolKit.RKOCEvaluatorAIAdjoint{T}
+    const RKOCResidualEvaluator = RKOCResidualEvaluatorAI{T}
+    const RKOCResidualEvaluatorAdjoint =
+        RungeKuttaToolKit.RKOCResidualEvaluatorAIAdjoint{T}
     @inline num_parameters(s::Int) = s * s
 elseif PARAMETERIZATION == :BE
     const RKOCEvaluator = RKOCEvaluatorBE{T}
     const RKOCEvaluatorAdjoint = RungeKuttaToolKit.RKOCEvaluatorBEAdjoint{T}
+    const RKOCResidualEvaluator = RKOCResidualEvaluatorBE{T}
+    const RKOCResidualEvaluatorAdjoint =
+        RungeKuttaToolKit.RKOCResidualEvaluatorBEAdjoint{T}
     @inline num_parameters(s::Int) = (s * (s + 1)) >> 1
 elseif PARAMETERIZATION == :BD
     const RKOCEvaluator = RKOCEvaluatorBD{T}
     const RKOCEvaluatorAdjoint = RungeKuttaToolKit.RKOCEvaluatorBDAdjoint{T}
+    const RKOCResidualEvaluator = RKOCResidualEvaluatorBD{T}
+    const RKOCResidualEvaluatorAdjoint =
+        RungeKuttaToolKit.RKOCResidualEvaluatorBDAdjoint{T}
     @inline num_parameters(s::Int) = (s * (s + 3)) >> 1
 elseif PARAMETERIZATION == :BI
     const RKOCEvaluator = RKOCEvaluatorBI{T}
     const RKOCEvaluatorAdjoint = RungeKuttaToolKit.RKOCEvaluatorBIAdjoint{T}
+    const RKOCResidualEvaluator = RKOCResidualEvaluatorBI{T}
+    const RKOCResidualEvaluatorAdjoint =
+        RungeKuttaToolKit.RKOCResidualEvaluatorBIAdjoint{T}
     @inline num_parameters(s::Int) = s * (s + 1)
 end
 
