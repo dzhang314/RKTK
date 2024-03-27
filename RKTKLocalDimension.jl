@@ -46,8 +46,9 @@ function main()
     residuals = evaluator(x)
     _eps = eps(T)
     _sqrt_eps = sqrt(_eps)
-    _loose_eps = _sqrt_eps * sqrt(_sqrt_eps)
-    _strict_eps = _eps * _sqrt_eps
+    _loose_eps = _sqrt_eps
+    _strict_eps = _sqrt_eps * sqrt(_sqrt_eps)
+    println(_loose_eps, " : ", _strict_eps)
     if any(!(r * r < _eps) for r in residuals)
         println(stderr,
             "WARNING: Some residuals of this method significantly exceed" *
@@ -65,15 +66,15 @@ function main()
     result = Pair{LevelSequence,T}[]
     _zero = zero(T)
     while (length(result) < n) && !isempty(constraints)
-        norm, tree = findmax(norm2(v) for (t, v) in constraints)
-        if !(norm >= _zero)
+        norm_squared, tree = findmax(norm2(v) for (t, v) in constraints)
+        if !(norm_squared >= _zero)
             break
         end
         v = constraints[tree]
-        push!(result, tree => norm)
+        push!(result, tree => sqrt(norm_squared))
         delete!(constraints, tree)
         for (_, w) in constraints
-            axpy!(w, -dot(v, w, n) / norm2(v), v, n)
+            axpy!(w, -dot(v, w, n) / norm_squared, v, n)
         end
     end
 
@@ -102,8 +103,9 @@ function main()
                 " rank of the Jacobian of the order conditions.")
     else
         estimated_rank = length(result) - num_zeros
+        local_dimension = n - estimated_rank
         println("Estimated Jacobian rank: ", estimated_rank)
-        println("Estimated local dimension: ", n - estimated_rank)
+        println("Estimated local dimension: ", local_dimension)
     end
 
 end
