@@ -7,10 +7,6 @@ using Printf
 using RungeKuttaToolKit
 
 
-const EXIT_INVALID_ARG_COUNT = 5
-const EXIT_INVALID_ARG_FORMAT = 6
-
-
 const USAGE_STRING = """
 Usage: julia [jl_options] $PROGRAM_FILE <mode> <order> <stages> [seed] [seed]
 [jl_options] refers to Julia options, such as -O3 or --threads=8.
@@ -112,14 +108,8 @@ function search(
         io = devnull
     end
 
-    if T == Float64
-        for x in opt.current_point
-            fprintln(io, @sprintf("%+.16e", x))
-        end
-    else
-        for x in opt.current_point
-            fprintln(io, x)
-        end
+    for line in uniform_precision_strings(opt.current_point)
+        fprintln(io, line)
     end
 
     fprintln(io)
@@ -148,14 +138,8 @@ function search(
 
     fprintln(io)
 
-    if T == Float64
-        for x in opt.current_point
-            fprintln(io, @sprintf("%+.16e", x))
-        end
-    else
-        for x in opt.current_point
-            fprintln(io, x)
-        end
+    for line in uniform_precision_strings(opt.current_point)
+        fprintln(io, line)
     end
 
     if WRITE_FILE

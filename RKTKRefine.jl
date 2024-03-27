@@ -5,12 +5,6 @@ using Printf
 using RungeKuttaToolKit
 
 
-const EXIT_INVALID_ARG_COUNT = 5
-const EXIT_INVALID_ARG_FORMAT = 6
-const EXIT_FILE_EMPTY = 7
-const EXIT_INVALID_PARAMETER_COUNT = 8
-
-
 const USAGE_STRING = """
 Usage: julia [jl_options] $PROGRAM_FILE <mode> [order] [stages] <filename>
 [jl_options] refers to Julia options, such as -O3 or --threads=8.
@@ -58,26 +52,6 @@ function fprint_status(io::IO, opt::RKOCOptimizer; force::Bool=false)
 end
 
 
-function read_blocks(filename::String)
-    blocks = Vector{String}[]
-    current_block = String[]
-    for line in eachline(filename)
-        if all(isspace(c) for c in line)
-            if !isempty(current_block)
-                push!(blocks, current_block)
-                current_block = String[]
-            end
-        else
-            push!(current_block, line)
-        end
-    end
-    if !isempty(current_block)
-        push!(blocks, current_block)
-    end
-    return blocks
-end
-
-
 const RKTK_TXT_FILENAME_REGEX =
     r"^RKTK-([0-9]{2})-([0-9]{2})-([AB][EDI][MA][0-9])-([0-9]{4})-([0-9]{4})-([0-9]{4}|FAIL)-([0-9A-Fa-f]{16})\.txt$"
 
@@ -91,24 +65,10 @@ function main_rktk_file(filename::String)
     stages = parse(Int, m[2]; base=10)
     seed = parse(UInt64, m[7]; base=16)
 
-    blocks = read_blocks(filename)
-    if isempty(blocks)
-        println(stderr, "ERROR: Input file is empty.")
-        exit(EXIT_FILE_EMPTY)
-    end
-    last_block = blocks[end]
-
     n = num_parameters(stages)
-    if length(last_block) != n
-        println(stderr, "ERROR: Invalid number of parameters for" *
-                        " parameterization $PARAMETERIZATION" *
-                        " with $stages stages.")
-        exit(EXIT_INVALID_PARAMETER_COUNT)
-    end
-
-    initial_point = parse_number.(last_block)
-    for x in initial_point
-        println(x)
+    initial_point = parse_last_block(filename, stages)
+    for line in uniform_precision_strings(initial_point)
+        println(line)
     end
 
     evaluator = RKOCEvaluator(order, stages)
@@ -140,8 +100,8 @@ function main_rktk_file(filename::String)
 
     fprintln(io)
 
-    for x in opt.current_point
-        fprintln(io, x)
+    for line in uniform_precision_strings(opt.current_point)
+        fprintln(io, line)
     end
 
     close(io)
@@ -159,24 +119,10 @@ end
 
 function main(order::Int, stages::Int, filename::String)
 
-    blocks = read_blocks(filename)
-    if isempty(blocks)
-        println(stderr, "ERROR: Input file is empty.")
-        exit(EXIT_FILE_EMPTY)
-    end
-    last_block = blocks[end]
-
     n = num_parameters(stages)
-    if length(last_block) != n
-        println(stderr, "ERROR: Invalid number of parameters for" *
-                        " parameterization $PARAMETERIZATION" *
-                        " with $stages stages.")
-        exit(EXIT_INVALID_PARAMETER_COUNT)
-    end
-
-    initial_point = parse_number.(last_block)
-    for x in initial_point
-        println(x)
+    initial_point = parse_last_block(filename, stages)
+    for line in uniform_precision_strings(initial_point)
+        println(line)
     end
 
     evaluator = RKOCEvaluator(order, stages)

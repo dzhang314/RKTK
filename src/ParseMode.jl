@@ -3,10 +3,23 @@
 # command-line argument, which specifies the RKTK operating mode.
 
 
-const EXIT_INVALID_MODE_LENGTH = 1
-const EXIT_INVALID_PARAMETERIZATION = 2
-const EXIT_INVALID_PRECISION = 3
-const EXIT_INVALID_NUMERIC_LITERAL = 4
+const EXIT_MODE_NOT_PROVIDED = 1
+const EXIT_INVALID_MODE_LENGTH = 2
+const EXIT_INVALID_PARAMETERIZATION = 3
+const EXIT_INVALID_PRECISION = 4
+const EXIT_INVALID_NUMERIC_LITERAL = 5
+const EXIT_FILE_DOES_NOT_EXIST = 6
+const EXIT_INPUT_FILE_EMPTY = 7
+const EXIT_INVALID_PARAMETER_COUNT = 8
+const EXIT_INVALID_ARG_COUNT = 9
+const EXIT_INVALID_ARG_FORMAT = 10
+
+
+if isempty(ARGS)
+    println(stderr, "ERROR: No mode string provided.")
+    print(stderr, USAGE_STRING)
+    exit(EXIT_MODE_NOT_PROVIDED)
+end
 
 
 function parse_mode(mode::String)
@@ -165,15 +178,97 @@ function compute_scores(optimizer::RKOCOptimizer)
 end
 
 
-function parse_number(s::AbstractString)
+function parse_number(str::AbstractString)
     try
-        @static if T == Float64
-            return parse(Float64, s)
+        @static if T <: MultiFloat
+            return T(str)
         else
-            return T(s)
+            return parse(T, str)
         end
-    catch e
-        println(stderr, "ERROR: Cannot parse $s as a floating-point number.")
+    catch
+        println(stderr, "ERROR: Cannot parse $str as a floating-point number.")
         exit(EXIT_INVALID_NUMERIC_LITERAL)
     end
+end
+
+
+function read_blocks(path::AbstractString)
+    if !isfile(path)
+        println(stderr, "ERROR: Input file $path does not exist.")
+        exit(EXIT_FILE_DOES_NOT_EXIST)
+    end
+    result = Vector{String}[]
+    block = String[]
+    for line in eachline(path)
+        if all(isspace(c) for c in line)
+            if !isempty(block)
+                push!(result, block)
+                block = String[]
+            end
+        else
+            push!(block, line)
+        end
+    end
+    if !isempty(block)
+        push!(result, block)
+    end
+    return result
+end
+
+
+function parse_last_block(path::AbstractString)
+    blocks = read_blocks(path)
+    if isempty(blocks)
+        println(stderr, "ERROR: Input file $path is empty.")
+        exit(EXIT_INPUT_FILE_EMPTY)
+    end
+    return parse_number.(blocks[end])
+end
+
+
+function parse_last_block(path::AbstractString, stages::Int)
+    result = parse_last_block(path)
+    expected = num_parameters(stages)
+    actual = length(result)
+    if length(result) != num_parameters(stages)
+        println(stderr,
+            "ERROR: Input file $path contains an invalid number of entries" *
+            " for parameterization $PARAMETERIZATION with $stages stages" *
+            " (expected $expected, received $actual).")
+        exit(EXIT_INVALID_PARAMETER_COUNT)
+    end
+    return result
+end
+
+
+function precision_is_sufficient(x::U, n::Int) where {U}
+    s = @sprintf("%+.*e", n, x)
+    return parse(U, s) == x
+end
+
+
+function precision_is_sufficient(x::MultiFloat{U,N}, n::Int) where {U,N}
+    s = @sprintf("%+.*e", n, x)
+    return MultiFloat{U,N}(s) == MultiFloats.renormalize(x)
+end
+
+
+precision_is_sufficient(x::Vector{U}, n::Int) where {U} =
+    all(precision_is_sufficient(c, n) for c in x)
+
+
+function find_sufficient_precision(x::Vector{U}) where {U}
+    n = ceil(Int, precision(U; base=2) * log10(2.0))
+    while true
+        if precision_is_sufficient(x, n)
+            return n
+        end
+        n += 1
+    end
+end
+
+
+function uniform_precision_strings(x::Vector{U}) where {U}
+    n = find_sufficient_precision(x)
+    return [@sprintf("%+.*e", n, c) for c in x]
 end
