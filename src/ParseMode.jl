@@ -3,6 +3,12 @@
 # command-line argument, which specifies the RKTK operating mode.
 
 
+using DZOptimization
+using MultiFloats
+using Printf
+using RungeKuttaToolKit
+
+
 const EXIT_MODE_NOT_PROVIDED = 1
 const EXIT_INVALID_MODE_LENGTH = 2
 const EXIT_INVALID_PARAMETERIZATION = 3
@@ -13,6 +19,35 @@ const EXIT_INPUT_FILE_EMPTY = 7
 const EXIT_INVALID_PARAMETER_COUNT = 8
 const EXIT_INVALID_ARG_COUNT = 9
 const EXIT_INVALID_ARG_FORMAT = 10
+const EXIT_INVALID_TREE_ORDERING = 11
+
+
+function get_tree_ordering()
+    requested_orderings = [arg[17:end] for arg in ARGS if (
+        startswith(arg, "--tree-ordering=") ||
+        startswith(arg, "--tree_ordering="))]
+    if length(requested_orderings) > 1
+        println(stderr, "ERROR: Only one tree ordering can be specified.")
+        exit(EXIT_INVALID_TREE_ORDERING)
+    end
+    if isempty(requested_orderings)
+        return :reverse_lexicographic
+    end
+    result = Symbol(only(requested_orderings))
+    if !(result in [:lexicographic, :reverse_lexicographic])
+        println(stderr,
+            "ERROR: Unknown tree ordering specified." *
+            " Allowed values are lexicographic and reverse_lexicographic.")
+        exit(EXIT_INVALID_TREE_ORDERING)
+    end
+    filter!(arg -> !(
+            startswith(arg, "--tree-ordering=") ||
+            startswith(arg, "--tree_ordering=")), ARGS)
+    return result
+end
+
+
+const TREE_ORDERING = get_tree_ordering()
 
 
 if isempty(ARGS)
@@ -286,7 +321,11 @@ function find_sufficient_precision(x::Vector{U}) where {U}
 end
 
 
-function uniform_precision_strings(x::Vector{U}) where {U}
+function uniform_precision_strings(x::Vector{U}; sign::Bool=true) where {U}
     n = find_sufficient_precision(x)
-    return [@sprintf("%+.*e", n, c) for c in x]
+    if sign
+        return [@sprintf("%+.*e", n, c) for c in x]
+    else
+        return [@sprintf("%.*e", n, c) for c in x]
+    end
 end
