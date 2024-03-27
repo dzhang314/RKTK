@@ -57,13 +57,16 @@ function main()
     residuals = evaluator(x)
     errors = [residual / butcher_symmetry(tree)
               for (tree, residual) in zip(trees, residuals)]
+    push!(errors, sqrt(norm2(errors) / length(errors)))
+
     tree_strings = [string(tree.data) * ':' for tree in trees]
+    push!(tree_strings, "RMS Principal Error:")
+
     tree_length = maximum(length(s) for s in tree_strings)
     error_strings = uniform_precision_strings(errors)
     for (tree_string, error_string) in zip(tree_strings, error_strings)
         println(rpad(tree_string, tree_length), ' ', error_string)
     end
-    println("RMS Principal Error: ", sqrt(norm2(errors) / length(errors)))
 
 end
 
