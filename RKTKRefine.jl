@@ -185,6 +185,7 @@ function parse_arguments()
 end
 
 
+warn_single_threaded()
 if !isnothing(match(RKTK_TXT_FILENAME_REGEX, basename(ARGS[2])))
     main_rktk_file(ARGS[2])
 else

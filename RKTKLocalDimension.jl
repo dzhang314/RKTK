@@ -110,4 +110,5 @@ function main()
 end
 
 
+warn_single_threaded()
 main()

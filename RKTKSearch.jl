@@ -1,10 +1,5 @@
 using Base.Threads
-using DZOptimization
 using DZOptimization.Kernels: norm2
-using DZOptimization.PCG
-using MultiFloats
-using Printf
-using RungeKuttaToolKit
 
 
 const USAGE_STRING = """
@@ -48,25 +43,6 @@ function fprintln(io::IO, args...)
 end
 
 
-function fprint_status(io::IO, opt::LBFGSOptimizer; force::Bool=false)
-    history_count = length(opt._rho)
-    reset_occurred = ((opt.iteration_count[] >= history_count) &&
-                      (opt._history_count[] != history_count))
-    if reset_occurred || force
-        num_residuals = length(opt.objective_function.residuals)
-        n = length(opt.current_point)
-        fprintln(io, @sprintf("|%12d | %.8e | %.8e | %.8e | %.8e |%s",
-            opt.iteration_count[],
-            sqrt(opt.current_objective_value[] / num_residuals),
-            sqrt(norm2(opt.current_gradient) / n),
-            sqrt(maximum(abs, opt.current_point)),
-            sqrt(norm2(opt.delta_point) / n),
-            reset_occurred ? " RESET" : ""))
-    end
-    return nothing
-end
-
-
 function find_existing_file(prefix::AbstractString, suffix::AbstractString)
     for filename in readdir()
         if (length(filename) == 51 &&
@@ -98,9 +74,7 @@ function search(
         end
     end
 
-    n = num_parameters(stages)
-    opt = LBFGSOptimizer(evaluator, evaluator', QuadraticLineSearch(),
-        random_array(seed, T, n), sqrt(n * eps(T)), n)
+    opt = create_optimizer(evaluator, stages, seed)
 
     @static if WRITE_FILE
         io = open(filename, "w")
@@ -118,7 +92,7 @@ function search(
                  "| MAX ABS COEFF. |  STEP  LENGTH  |")
     fprintln(io, "|-------------|----------------|----------------" *
                  "|----------------|----------------|")
-    fprint_status(io, opt; force=true)
+    fprintln(io, compute_table_row(opt))
     failed = false
     start_time = time_ns()
     while true
@@ -131,10 +105,12 @@ function search(
             failed = true
             break
         end
-        fprint_status(io, opt; force=(opt.iteration_count[] % 1000 == 0))
+        if reset_occurred(opt) || (opt.iteration_count[] % 1000 == 0)
+            fprintln(io, compute_table_row(opt))
+        end
     end
     end_time = time_ns()
-    fprint_status(io, opt; force=true)
+    fprintln(io, compute_table_row(opt))
 
     fprintln(io)
 
@@ -146,14 +122,7 @@ function search(
         close(io)
     end
 
-    num_residuals = length(evaluator.residuals)
-    rms_residual = sqrt(Float64(opt.current_objective_value[]) / num_residuals)
-    rms_gradient = sqrt(Float64(norm2(opt.current_gradient)) / n)
-    rms_coeff = sqrt(Float64(norm2(opt.current_point)) / n)
-    residual_score = round(Int, clamp(-500 * log10(rms_residual), 0.0, 9999.0))
-    gradient_score = round(Int, clamp(-500 * log10(rms_gradient), 0.0, 9999.0))
-    coeff_score = round(Int, clamp(10000 - 2500 * log10(rms_coeff), 0.0, 9999.0))
-
+    residual_score, gradient_score, coeff_score = compute_scores(opt)
     finalname = @sprintf("RKTK-%02d-%02d-%s%s-%04d-%04d-%s-%016X.txt",
         order, stages, PARAMETERIZATION, PRECISION, residual_score,
         gradient_score, failed ? "FAIL" : @sprintf("%04d", coeff_score), seed)

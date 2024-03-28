@@ -3,7 +3,9 @@
 # command-line argument, which specifies the RKTK operating mode.
 
 
+using Base.Threads
 using DZOptimization
+using DZOptimization.PCG
 using MultiFloats
 using Printf
 using RungeKuttaToolKit
@@ -20,6 +22,16 @@ const EXIT_INVALID_PARAMETER_COUNT = 8
 const EXIT_INVALID_ARG_COUNT = 9
 const EXIT_INVALID_ARG_FORMAT = 10
 const EXIT_INVALID_TREE_ORDERING = 11
+
+
+function warn_single_threaded()
+    if nthreads() != 1
+        println(stderr,
+            "WARNING: Multiple threads of execution were requested, but" *
+            " $PROGRAM_FILE is a single-threaded program. Executio will" *
+            " continue using only one thread.")
+    end
+end
 
 
 function get_tree_ordering()
@@ -227,6 +239,20 @@ const RKOCOptimizer = LBFGSOptimizer{typeof(DZOptimization.NULL_CONSTRAINT),
     RKOCEvaluator,RKOCEvaluatorAdjoint,QuadraticLineSearch,T,1}
 
 
+function create_optimizer(evaluator::RKOCEvaluator, stages::Int, seed::UInt64)
+    n = num_parameters(stages)
+    return LBFGSOptimizer(evaluator, evaluator', QuadraticLineSearch(),
+        random_array(seed, T, n), sqrt(n * eps(T)), n)
+end
+
+
+function reset_occurred(optimizer::RKOCOptimizer)
+    history_length = length(optimizer._rho)
+    return ((optimizer.iteration_count[] >= history_length) &&
+            (optimizer._history_count[] != history_length))
+end
+
+
 function compute_scores(optimizer::RKOCOptimizer)
     num_residuals = length(optimizer.objective_function.residuals)
     num_variables = length(optimizer.current_point)
@@ -240,6 +266,20 @@ function compute_scores(optimizer::RKOCOptimizer)
     coeff_score = round(Int,
         clamp(10000 - 2500 * log10(Float64(rms_coeff)), 0.0, 9999.0))
     return (residual_score, gradient_score, coeff_score)
+end
+
+
+function compute_table_row(optimizer::RKOCOptimizer)
+    num_residuals = length(optimizer.objective_function.residuals)
+    num_variables = length(optimizer.current_point)
+    return @sprintf("|%12d | %.8e | %.8e | %.8e | %.8e |%s",
+        optimizer.iteration_count[],
+        sqrt(optimizer.current_objective_value[] / num_residuals),
+        sqrt(norm2(optimizer.current_gradient) / num_variables),
+        max(maximum(abs, optimizer.current_point),
+            maximum(abs, optimizer.objective_function.b)),
+        sqrt(norm2(optimizer.delta_point)),
+        reset_occurred(optimizer) ? " RESET" : "")
 end
 
 
