@@ -48,7 +48,6 @@ function main()
     _sqrt_eps = sqrt(_eps)
     _loose_eps = _sqrt_eps
     _strict_eps = _sqrt_eps * sqrt(_sqrt_eps)
-    println(_loose_eps, " : ", _strict_eps)
     if any(!(r * r < _eps) for r in residuals)
         println(stderr,
             "WARNING: Some residuals of this method significantly exceed" *
@@ -80,7 +79,7 @@ function main()
 
     tree_strings = [string(tree.data) * ':' for (tree, _) in result]
     tree_length = maximum(length(s) for s in tree_strings)
-    norm_strings = uniform_precision_strings(
+    norm_strings = uniform_lossy_strings(
         [norm for (_, norm) in result]; sign=false)
     num_zeros = 0
     num_uncertain = 0

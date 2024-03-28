@@ -173,6 +173,8 @@ end
     const RKOCResidualEvaluatorAdjoint =
         RungeKuttaToolKit.RKOCResidualEvaluatorAEAdjoint{T}
     @inline num_parameters(s::Int) = (s * (s - 1)) >> 1
+    @inline b_index(s::Int, i::Int) = ((s * (s - 1)) >> 1) + i
+    @inline c_range(::Int, i::Int) = (((i*(i-3))>>1)+2):((i*(i-1))>>1)
 elseif PARAMETERIZATION == :AD
     const RKOCEvaluator = RKOCEvaluatorAD{T}
     const RKOCEvaluatorAdjoint = RungeKuttaToolKit.RKOCEvaluatorADAdjoint{T}
@@ -180,6 +182,8 @@ elseif PARAMETERIZATION == :AD
     const RKOCResidualEvaluatorAdjoint =
         RungeKuttaToolKit.RKOCResidualEvaluatorADAdjoint{T}
     @inline num_parameters(s::Int) = (s * (s + 1)) >> 1
+    @inline b_index(s::Int, i::Int) = ((s * (s + 1)) >> 1) + i
+    @inline c_range(::Int, i::Int) = (((i*(i-1))>>1)+1):((i*(i+1))>>1)
 elseif PARAMETERIZATION == :AI
     const RKOCEvaluator = RKOCEvaluatorAI{T}
     const RKOCEvaluatorAdjoint = RungeKuttaToolKit.RKOCEvaluatorAIAdjoint{T}
@@ -187,6 +191,8 @@ elseif PARAMETERIZATION == :AI
     const RKOCResidualEvaluatorAdjoint =
         RungeKuttaToolKit.RKOCResidualEvaluatorAIAdjoint{T}
     @inline num_parameters(s::Int) = s * s
+    @inline b_index(s::Int, i::Int) = s * s + i
+    @inline c_range(s::Int, i::Int) = (s*(i-1)+1):(s*i)
 elseif PARAMETERIZATION == :BE
     const RKOCEvaluator = RKOCEvaluatorBE{T}
     const RKOCEvaluatorAdjoint = RungeKuttaToolKit.RKOCEvaluatorBEAdjoint{T}
@@ -194,6 +200,8 @@ elseif PARAMETERIZATION == :BE
     const RKOCResidualEvaluatorAdjoint =
         RungeKuttaToolKit.RKOCResidualEvaluatorBEAdjoint{T}
     @inline num_parameters(s::Int) = (s * (s + 1)) >> 1
+    @inline b_index(s::Int, i::Int) = ((s * (s - 1)) >> 1) + i
+    @inline c_range(::Int, i::Int) = (((i*(i-3))>>1)+2):((i*(i-1))>>1)
 elseif PARAMETERIZATION == :BD
     const RKOCEvaluator = RKOCEvaluatorBD{T}
     const RKOCEvaluatorAdjoint = RungeKuttaToolKit.RKOCEvaluatorBDAdjoint{T}
@@ -201,6 +209,8 @@ elseif PARAMETERIZATION == :BD
     const RKOCResidualEvaluatorAdjoint =
         RungeKuttaToolKit.RKOCResidualEvaluatorBDAdjoint{T}
     @inline num_parameters(s::Int) = (s * (s + 3)) >> 1
+    @inline b_index(s::Int, i::Int) = ((s * (s + 1)) >> 1) + i
+    @inline c_range(::Int, i::Int) = (((i*(i-1))>>1)+1):((i*(i+1))>>1)
 elseif PARAMETERIZATION == :BI
     const RKOCEvaluator = RKOCEvaluatorBI{T}
     const RKOCEvaluatorAdjoint = RungeKuttaToolKit.RKOCEvaluatorBIAdjoint{T}
@@ -208,6 +218,8 @@ elseif PARAMETERIZATION == :BI
     const RKOCResidualEvaluatorAdjoint =
         RungeKuttaToolKit.RKOCResidualEvaluatorBIAdjoint{T}
     @inline num_parameters(s::Int) = s * (s + 1)
+    @inline b_index(s::Int, i::Int) = s * s + i
+    @inline c_range(s::Int, i::Int) = (s*(i-1)+1):(s*i)
 end
 
 
@@ -317,6 +329,16 @@ function find_sufficient_precision(x::Vector{U}) where {U}
             return n
         end
         n += 1
+    end
+end
+
+
+function uniform_lossy_strings(x::Vector{U}; sign::Bool=true) where {U}
+    n = ceil(Int, precision(U; base=2) * log10(2.0))
+    if sign
+        return [@sprintf("%+.*e", n, c) for c in x]
+    else
+        return [@sprintf("%.*e", n, c) for c in x]
     end
 end
 
