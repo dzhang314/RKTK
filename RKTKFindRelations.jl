@@ -128,10 +128,10 @@ function main()
             end
             norm = sqrt(norm2(v))
             if norm < _strict_eps
-                push!(left_sides, "    A[$i, $j]: ")
+                push!(left_sides, "    A[$i, $j]:")
                 push!(right_sides, x[k])
             elseif norm < _loose_eps
-                push!(left_sides, "(?) A[$i, $j]: ")
+                push!(left_sides, "(?) A[$i, $j]:")
                 push!(right_sides, x[k])
             end
         end
@@ -145,10 +145,10 @@ function main()
         end
         norm = sqrt(norm2(v))
         if norm < _strict_eps
-            push!(left_sides, "    b[$i]: ")
+            push!(left_sides, "    b[$i]:")
             push!(right_sides, dot(b_mask(i), x, n))
         elseif norm < _loose_eps
-            push!(left_sides, "(?) b[$i]: ")
+            push!(left_sides, "(?) b[$i]:")
             push!(right_sides, dot(b_mask(i), x, n))
         end
     end
@@ -162,10 +162,10 @@ function main()
             end
             norm = sqrt(norm2(v))
             if norm < _strict_eps
-                push!(left_sides, "    b[$i] - b[$j]: ")
+                push!(left_sides, "    b[$i] - b[$j]:")
                 push!(right_sides, dot(b_mask(i) - b_mask(j), x, n))
             elseif norm < _loose_eps
-                push!(left_sides, "(?) b[$i] - b[$j]: ")
+                push!(left_sides, "(?) b[$i] - b[$j]:")
                 push!(right_sides, dot(b_mask(i) - b_mask(j), x, n))
             end
         end
@@ -179,10 +179,10 @@ function main()
         end
         norm = sqrt(norm2(v))
         if norm < _strict_eps
-            push!(left_sides, "    c[$i]: ")
+            push!(left_sides, "    c[$i]:")
             push!(right_sides, dot(c_mask(i), x, n))
         elseif norm < _loose_eps
-            push!(left_sides, "(?) c[$i]: ")
+            push!(left_sides, "(?) c[$i]:")
             push!(right_sides, dot(c_mask(i), x, n))
         end
     end
@@ -196,10 +196,10 @@ function main()
             end
             norm = sqrt(norm2(v))
             if norm < _strict_eps
-                push!(left_sides, "    c[$i] - c[$j]: ")
+                push!(left_sides, "    c[$i] - c[$j]:")
                 push!(right_sides, dot(c_mask(i) - c_mask(j), x, n))
             elseif norm < _loose_eps
-                push!(left_sides, "(?) c[$i] - c[$j]: ")
+                push!(left_sides, "(?) c[$i] - c[$j]:")
                 push!(right_sides, dot(c_mask(i) - c_mask(j), x, n))
             end
         end
