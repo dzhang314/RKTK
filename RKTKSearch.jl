@@ -43,7 +43,17 @@ function fprintln(io::IO, args...)
 end
 
 
+# TODO: Construct set of seeds rather than filenames
+const EXISTING_FILES = String[]
+
+
 function find_existing_file(prefix::AbstractString, suffix::AbstractString)
+    for filename in EXISTING_FILES
+        if (length(filename) == 51 &&
+            startswith(filename, prefix) && endswith(filename, suffix))
+            return filename
+        end
+    end
     for filename in readdir()
         if (length(filename) == 51 &&
             startswith(filename, prefix) && endswith(filename, suffix))
@@ -161,6 +171,7 @@ function main(order::Int, stages::Int, min_seed::UInt64, max_seed::UInt64)
             end
             cd(dirname)
         end
+        append!(EXISTING_FILES, readdir())
     end
     SEED_COUNTER[] = min_seed
     start_time = time_ns()
