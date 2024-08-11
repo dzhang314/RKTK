@@ -4,6 +4,8 @@
 
 **RKTK** (Runge–Kutta toolkit) is a collection of scripts and tools, written in the [Julia][2] programming language, for discovering and optimizing new [Runge–Kutta methods][3]. This software powered my discovery of the first explicit 10<sup>th</sup>-order Runge–Kutta method with 16 stages, as described in [my undergraduate thesis][4], marking the first advance in over 40 years since [Ernst Hairer's discovery of a method with 17 stages in 1978][5].
 
+> The algorithms that underlie **RKTK** are described in **[this paper][9]**, which is **[freely available in read-only form][10]**.
+
 **RKTK** is closely related to its sister repository, **[RungeKuttaToolKit.jl][6]**.
 
 * **[RungeKuttaToolKit.jl][6]** implements the core mathematical operations of the algebraic theory of Runge–Kutta methods, such as computing Butcher weights $\Phi_t(A)$ and evaluating the gradient of the sum-of-squares residual function. **RungeKuttaToolKit.jl** is intended to be useful to all researchers studying Runge–Kutta methods and is [registered in the Julia General package registry][7], so it can be installed into any Julia environment with the command `]add RungeKuttaToolKit`.
@@ -34,3 +36,5 @@ Set `<num_threads>`, `<order>`, and `<num_stages>` appropriately. On processors 
 [6]: https://github.com/dzhang314/RungeKuttaToolKit.jl
 [7]: https://juliahub.com/ui/Packages/General/RungeKuttaToolKit
 [8]: https://github.com/dzhang314/RKTK/blob/master/RKTKSearch.jl
+[9]: https://link.springer.com/article/10.1007/s11075-024-01783-2
+[10]: https://rdcu.be/dz7sy
