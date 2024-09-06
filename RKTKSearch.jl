@@ -1,6 +1,16 @@
 using Base.Threads
+using DZOptimization
+using DZOptimization.PCG
 using DZOptimization.Kernels: norm2
-include("./src/ErrorCodes.jl")
+using MultiFloats
+using Printf
+using RungeKuttaToolKit
+using RungeKuttaToolKit.RKCost
+using RungeKuttaToolKit.RKParameterization
+
+
+push!(LOAD_PATH, joinpath(@__DIR__, "src"))
+using RKTKUtilities
 
 
 const USAGE_STRING = """
@@ -41,6 +51,63 @@ function fprintln(io::IO, args...)
 end
 
 
+function ensuredir(dirname)
+    if basename(pwd()) != dirname
+        if !isdir(dirname)
+            mkdir(dirname)
+        end
+        cd(dirname)
+    end
+    return nothing
+end
+
+
+function construct_optimizer(
+    seed::UInt64,
+    prob::RKOCOptimizationProblem{T},
+) where {T}
+    n = prob.param.num_variables
+    return LBFGSOptimizer(prob, prob', QuadraticLineSearch(),
+        random_array(seed, T, n), sqrt(n * eps(T)), n)
+end
+
+
+function reset_occurred(opt::LBFGSOptimizer)
+    history_length = length(opt._rho)
+    return ((opt.iteration_count[] >= history_length) &&
+            (opt._history_count[] != history_length))
+end
+
+
+function compute_scores(opt)
+    num_residuals = length(opt.objective_function.ev.inv_gamma)
+    num_variables = length(opt.current_point)
+    rms_residual = sqrt(opt.current_objective_value[] / num_residuals)
+    rms_gradient = sqrt(norm2(opt.current_gradient) / num_variables)
+    rms_coeff = sqrt(norm2(opt.current_point) / num_variables)
+    residual_score = round(Int,
+        clamp(-500 * log10(Float64(rms_residual)), 0.0, 9999.0))
+    gradient_score = round(Int,
+        clamp(-500 * log10(Float64(rms_gradient)), 0.0, 9999.0))
+    coeff_score = round(Int,
+        clamp(10000 - 2500 * log10(Float64(rms_coeff)), 0.0, 9999.0))
+    return (residual_score, gradient_score, coeff_score)
+end
+
+
+function compute_table_row(opt)
+    num_residuals = length(opt.objective_function.ev.inv_gamma)
+    num_variables = length(opt.current_point)
+    return @sprintf("|%12d | %.8e | %.8e | %.8e | %.8e |%s",
+        opt.iteration_count[],
+        sqrt(opt.current_objective_value[] / num_residuals),
+        sqrt(norm2(opt.current_gradient) / num_variables),
+        max(maximum(abs, opt.current_point)), # TODO: QR
+        sqrt(norm2(opt.delta_point)),
+        reset_occurred(opt) ? " RESET" : "")
+end
+
+
 # # TODO: Construct set of seeds rather than filenames
 # const EXISTING_FILES = String[]
 
@@ -66,23 +133,24 @@ const TOTAL_ITERATION_COUNT = Atomic{Int}(0)
 
 
 function search(
-    evaluator::RKOCEvaluator, order::Int, stages::Int, seed::UInt64
+    seed::UInt64,
+    prob::RKOCOptimizationProblem,
 )
-    filename = @sprintf("RKTK-%02d-%02d-%s%s-XXXX-XXXX-XXXX-%016X.txt",
-        order, stages, PARAMETERIZATION, PRECISION, seed)
+    filebase = "RKTK-06-07-BEM1"
+    filename = @sprintf("%s-XXXX-XXXX-XXXX-%016X.txt", filebase, seed)
     @assert length(filename) == 51
 
-    if WRITE_FILE
-        existing = find_existing_file(filename[1:16], filename[31:51])
-        if isnothing(existing)
-            @printf("Computing %s...\n", filename)
-        else
-            @printf("%s already exists.\n", existing)
-            return nothing
-        end
-    end
+    # if WRITE_FILE
+    #     existing = find_existing_file(filename[1:16], filename[31:51])
+    #     if isnothing(existing)
+    #         @printf("Computing %s...\n", filename)
+    #     else
+    #         @printf("%s already exists.\n", existing)
+    #         return nothing
+    #     end
+    # end
 
-    opt = create_optimizer(evaluator, stages, seed)
+    opt = construct_optimizer(seed, prob)
 
     @static if WRITE_FILE
         io = open(filename, "w")
@@ -131,9 +199,9 @@ function search(
     end
 
     residual_score, gradient_score, coeff_score = compute_scores(opt)
-    finalname = @sprintf("RKTK-%02d-%02d-%s%s-%04d-%04d-%s-%016X.txt",
-        order, stages, PARAMETERIZATION, PRECISION, residual_score,
-        gradient_score, failed ? "FAIL" : @sprintf("%04d", coeff_score), seed)
+    finalname = @sprintf("%s-%04d-%04d-%s-%016X.txt",
+        filebase, residual_score, gradient_score,
+        failed ? "FAIL" : @sprintf("%04d", coeff_score), seed)
     if WRITE_FILE
         mv(filename, finalname)
     end
@@ -148,33 +216,30 @@ end
 const SEED_COUNTER = Atomic{UInt64}(0)
 
 
-function thread_work(order::Int, stages::Int, max_seed::UInt64)
-    evaluator = RKOCEvaluator(order, stages)
+function thread_work(max_seed::UInt64)
+    prob = RKOCOptimizationProblem(
+        RKOCEvaluator{Float64}(6, 7),
+        RKCostL2{Float64}(),
+        RKParameterizationExplicit{Float64}(7))
     while true
         seed = atomic_add!(SEED_COUNTER, one(UInt64))
         if seed > max_seed
             break
         end
-        search(evaluator, order, stages, seed)
+        search(seed, prob)
     end
 end
 
 
 function main(order::Int, stages::Int, min_seed::UInt64, max_seed::UInt64)
     if WRITE_FILE
-        dirname = @sprintf("RKTK-%02d-%02d-%s", order, stages, PARAMETERIZATION)
-        if basename(pwd()) != dirname
-            if !isdir(dirname)
-                mkdir(dirname)
-            end
-            cd(dirname)
-        end
+        ensuredir(@sprintf("RKTK-06-07-BEM1"))
         # append!(EXISTING_FILES, readdir())
     end
     SEED_COUNTER[] = min_seed
     start_time = time_ns()
     @threads for _ = 1:nthreads()
-        thread_work(order, stages, max_seed)
+        thread_work(max_seed)
     end
     end_time = time_ns()
     elapsed_time = (end_time - start_time) / 1.0e9

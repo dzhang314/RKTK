@@ -233,43 +233,6 @@ function create_optimizer(evaluator::RKOCEvaluator, stages::Int, seed::UInt64)
 end
 
 
-function reset_occurred(optimizer::RKOCOptimizer)
-    history_length = length(optimizer._rho)
-    return ((optimizer.iteration_count[] >= history_length) &&
-            (optimizer._history_count[] != history_length))
-end
-
-
-function compute_scores(optimizer::RKOCOptimizer)
-    num_residuals = length(optimizer.objective_function.residuals)
-    num_variables = length(optimizer.current_point)
-    rms_residual = sqrt(optimizer.current_objective_value[] / num_residuals)
-    rms_gradient = sqrt(norm2(optimizer.current_gradient) / num_variables)
-    rms_coeff = sqrt(norm2(optimizer.current_point) / num_variables)
-    residual_score = round(Int,
-        clamp(-500 * log10(Float64(rms_residual)), 0.0, 9999.0))
-    gradient_score = round(Int,
-        clamp(-500 * log10(Float64(rms_gradient)), 0.0, 9999.0))
-    coeff_score = round(Int,
-        clamp(10000 - 2500 * log10(Float64(rms_coeff)), 0.0, 9999.0))
-    return (residual_score, gradient_score, coeff_score)
-end
-
-
-function compute_table_row(optimizer::RKOCOptimizer)
-    num_residuals = length(optimizer.objective_function.residuals)
-    num_variables = length(optimizer.current_point)
-    return @sprintf("|%12d | %.8e | %.8e | %.8e | %.8e |%s",
-        optimizer.iteration_count[],
-        sqrt(optimizer.current_objective_value[] / num_residuals),
-        sqrt(norm2(optimizer.current_gradient) / num_variables),
-        max(maximum(abs, optimizer.current_point),
-            maximum(abs, optimizer.objective_function.b)),
-        sqrt(norm2(optimizer.delta_point)),
-        reset_occurred(optimizer) ? " RESET" : "")
-end
-
-
 function parse_number(str::AbstractString)
     try
         @static if T <: MultiFloat
@@ -330,51 +293,4 @@ function parse_last_block(path::AbstractString, stages::Int)
         exit(EXIT_INVALID_PARAMETER_COUNT)
     end
     return result
-end
-
-
-function precision_is_sufficient(x::U, n::Int) where {U}
-    s = @sprintf("%+.*e", n, x)
-    return parse(U, s) == x
-end
-
-
-function precision_is_sufficient(x::MultiFloat{U,N}, n::Int) where {U,N}
-    s = @sprintf("%+.*e", n, x)
-    return MultiFloat{U,N}(s) == MultiFloats.renormalize(x)
-end
-
-
-precision_is_sufficient(x::Vector{U}, n::Int) where {U} =
-    all(precision_is_sufficient(c, n) for c in x)
-
-
-function find_sufficient_precision(x::Vector{U}) where {U}
-    n = ceil(Int, precision(U; base=2) * log10(2.0))
-    while true
-        if precision_is_sufficient(x, n)
-            return n
-        end
-        n += 1
-    end
-end
-
-
-function uniform_lossy_strings(x::Vector{U}; sign::Bool=true) where {U}
-    n = ceil(Int, precision(U; base=2) * log10(2.0))
-    if sign
-        return [@sprintf("%+.*e", n, c) for c in x]
-    else
-        return [@sprintf("%.*e", n, c) for c in x]
-    end
-end
-
-
-function uniform_precision_strings(x::Vector{U}; sign::Bool=true) where {U}
-    n = find_sufficient_precision(x)
-    if sign
-        return [@sprintf("%+.*e", n, c) for c in x]
-    else
-        return [@sprintf("%.*e", n, c) for c in x]
-    end
 end
