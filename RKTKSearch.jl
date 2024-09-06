@@ -167,9 +167,15 @@ function thread_work(
 end
 
 
-function main(order::Int, stages::Int, min_seed::UInt64, max_seed::UInt64)
-    dirname = @sprintf("RKTK-%02d-%02d-BE", order, stages)
-    prefix = @sprintf("RKTK-%02d-%02d-BEM1", order, stages)
+function main(
+    mode::AbstractString,
+    order::Int,
+    stages::Int,
+    min_seed::UInt64,
+    max_seed::UInt64,
+)
+    dirname = @sprintf("RKTK-%02d-%02d-%s", mode[1:2])
+    prefix = @sprintf("RKTK-%02d-%02d-%s", mode)
     if WRITE_FILE
         ensuredir(dirname)
     end
@@ -189,6 +195,8 @@ end
 function parse_arguments()
     try
         @assert 3 <= length(ARGS) <= 5
+
+        @assert is_valid_parameterization(ARGS[1])
 
         order = parse(Int, ARGS[2])
         @assert 0 < order < 100
