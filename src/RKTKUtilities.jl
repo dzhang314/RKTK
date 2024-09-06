@@ -57,7 +57,7 @@ end
 ################################################################################
 
 
-export is_valid_parameterization, compute_parameterization
+export is_valid_mode, compute_parameterization
 
 
 const FLOAT_TYPES = Dict(
@@ -92,7 +92,7 @@ const FLOAT_PRECISIONS = Dict(
     "A9" => 131072)
 
 
-is_valid_parameterization(mode::AbstractString) =
+is_valid_mode(mode::AbstractString) =
     (length(mode) == 4) &&
     (mode[1] == 'B') &&
     (mode[2] in ['E', 'D', 'I', 'P', 'Q', 'R', 'S']) &&
@@ -100,7 +100,7 @@ is_valid_parameterization(mode::AbstractString) =
 
 
 function compute_parameterization(mode::AbstractString, stages::Int)
-    @assert is_valid_parameterization(mode)
+    @assert is_valid_mode(mode)
     if mode[2] == 'E'
         return RKParameterizationExplicit{FLOAT_TYPES[mode[3:4]]}(stages)
     elseif mode[2] == 'D'

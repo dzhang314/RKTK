@@ -174,8 +174,8 @@ function main(
     min_seed::UInt64,
     max_seed::UInt64,
 )
-    dirname = @sprintf("RKTK-%02d-%02d-%s", mode[1:2])
-    prefix = @sprintf("RKTK-%02d-%02d-%s", mode)
+    dirname = @sprintf("RKTK-%02d-%02d-%s", order, stages, mode[1:2])
+    prefix = @sprintf("RKTK-%02d-%02d-%s", order, stages, mode)
     if WRITE_FILE
         ensuredir(dirname)
     end
@@ -196,7 +196,8 @@ function parse_arguments()
     try
         @assert 3 <= length(ARGS) <= 5
 
-        @assert is_valid_parameterization(ARGS[1])
+        mode = ARGS[1]
+        @assert is_valid_mode(mode)
 
         order = parse(Int, ARGS[2])
         @assert 0 < order < 100
@@ -214,7 +215,7 @@ function parse_arguments()
         end
         @assert min_seed <= max_seed
 
-        return (order, stages, min_seed, max_seed)
+        return (mode, order, stages, min_seed, max_seed)
 
     catch e
         if typeof(e) in [
