@@ -1,24 +1,20 @@
 using Base.Threads
 using DZOptimization.Kernels: norm2
+include("./src/ErrorCodes.jl")
 
 
 const USAGE_STRING = """
 Usage: julia [jl_options] $PROGRAM_FILE <mode> <order> <stages> [seed] [seed]
-[jl_options] refers to Julia options, such as -O3 or --threads=8.
+[jl_options] refers to Julia options, such as -O3 or --threads=N.
 
-<mode> is a four-character RKTK mode string, as explained in the RKTK manual.
-<order> and <stages> must be positive integers between 1 and 99.
+<mode> is a four-character RKTK mode string as described in the RKTK manual.
+<order> and <stages> are positive integers between 1 and 99.
 
-If no seed is specified, then a search is performed for every possible seed,
-    starting from zero and counting up through every unsigned 64-bit integer.
+If no seed is specified, then a search is performed for every possible seed
+    from 0 to 2^64 - 1.
 If one seed is specified, it is treated as an upper bound (inclusive).
-If two seeds are specified, they are treated as interval bounds (inclusive).
+If two seeds are specified, they are treated as lower and upper bounds.
 """
-
-
-const WRITE_FILE = !("--no-file" in ARGS)
-const WRITE_TERM = ((stdout isa Base.TTY) && (nthreads() == 1))
-filter!(arg -> (arg != "--no-file"), ARGS)
 
 
 if (length(ARGS) < 3) || (length(ARGS) > 5)
@@ -27,7 +23,9 @@ if (length(ARGS) < 3) || (length(ARGS) > 5)
 end
 
 
-include("./src/ParseMode.jl")
+const WRITE_FILE = !("--no-file" in ARGS)
+const WRITE_TERM = ((stdout isa Base.TTY) && (nthreads() == 1))
+filter!(arg -> (arg != "--no-file"), ARGS)
 
 
 function fprintln(io::IO, args...)
@@ -43,25 +41,25 @@ function fprintln(io::IO, args...)
 end
 
 
-# TODO: Construct set of seeds rather than filenames
-const EXISTING_FILES = String[]
+# # TODO: Construct set of seeds rather than filenames
+# const EXISTING_FILES = String[]
 
 
-function find_existing_file(prefix::AbstractString, suffix::AbstractString)
-    for filename in EXISTING_FILES
-        if (length(filename) == 51 &&
-            startswith(filename, prefix) && endswith(filename, suffix))
-            return filename
-        end
-    end
-    for filename in readdir()
-        if (length(filename) == 51 &&
-            startswith(filename, prefix) && endswith(filename, suffix))
-            return filename
-        end
-    end
-    return nothing
-end
+# function find_existing_file(prefix::AbstractString, suffix::AbstractString)
+#     for filename in EXISTING_FILES
+#         if (length(filename) == 51 &&
+#             startswith(filename, prefix) && endswith(filename, suffix))
+#             return filename
+#         end
+#     end
+#     for filename in readdir()
+#         if (length(filename) == 51 &&
+#             startswith(filename, prefix) && endswith(filename, suffix))
+#             return filename
+#         end
+#     end
+#     return nothing
+# end
 
 
 const TOTAL_ITERATION_COUNT = Atomic{Int}(0)
@@ -171,7 +169,7 @@ function main(order::Int, stages::Int, min_seed::UInt64, max_seed::UInt64)
             end
             cd(dirname)
         end
-        append!(EXISTING_FILES, readdir())
+        # append!(EXISTING_FILES, readdir())
     end
     SEED_COUNTER[] = min_seed
     start_time = time_ns()

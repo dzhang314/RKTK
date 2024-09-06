@@ -11,24 +11,11 @@ using Printf
 using RungeKuttaToolKit
 
 
-const EXIT_MODE_NOT_PROVIDED = 1
-const EXIT_INVALID_MODE_LENGTH = 2
-const EXIT_INVALID_PARAMETERIZATION = 3
-const EXIT_INVALID_PRECISION = 4
-const EXIT_INVALID_NUMERIC_LITERAL = 5
-const EXIT_FILE_DOES_NOT_EXIST = 6
-const EXIT_INPUT_FILE_EMPTY = 7
-const EXIT_INVALID_PARAMETER_COUNT = 8
-const EXIT_INVALID_ARG_COUNT = 9
-const EXIT_INVALID_ARG_FORMAT = 10
-const EXIT_INVALID_TREE_ORDERING = 11
-
-
 function warn_single_threaded()
     if nthreads() != 1
         println(stderr,
             "WARNING: Multiple threads of execution were requested, but" *
-            " $PROGRAM_FILE is a single-threaded program. Executio will" *
+            " $PROGRAM_FILE is a single-threaded program. Execution will" *
             " continue using only one thread.")
     end
 end
