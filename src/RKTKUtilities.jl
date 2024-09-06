@@ -2,10 +2,12 @@ module RKTKUtilities
 
 
 using DZOptimization: LBFGSOptimizer, QuadraticLineSearch
+using DZOptimization.Kernels: norm2
 using DZOptimization.PCG: random_array
-using MultiFloats: MultiFloat, renormalize
+using MultiFloats
 using Printf: @sprintf
 using RungeKuttaToolKit: RKOCOptimizationProblem
+using RungeKuttaToolKit.RKParameterization
 
 
 #################################################################### ERROR CODES
@@ -55,6 +57,67 @@ end
 ################################################################################
 
 
+export compute_parameterization
+
+
+const FLOAT_TYPES = Dict(
+    "M1" => Float64,
+    "M2" => Float64x2,
+    "M3" => Float64x3,
+    "M4" => Float64x4,
+    "M5" => Float64x5,
+    "M6" => Float64x6,
+    "M7" => Float64x7,
+    "M8" => Float64x8,
+    "A1" => BigFloat,
+    "A2" => BigFloat,
+    "A3" => BigFloat,
+    "A4" => BigFloat,
+    "A5" => BigFloat,
+    "A6" => BigFloat,
+    "A7" => BigFloat,
+    "A8" => BigFloat,
+    "A9" => BigFloat)
+
+
+const FLOAT_PRECISIONS = Dict(
+    "A1" => 512,
+    "A2" => 1024,
+    "A3" => 2048,
+    "A4" => 4096,
+    "A5" => 8192,
+    "A6" => 16384,
+    "A7" => 32768,
+    "A8" => 65536,
+    "A9" => 131072)
+
+
+function compute_parameterization(mode::AbstractString, stages::Int)
+    @assert length(mode) == 4
+    @assert mode[1] in ['B']
+    @assert mode[2] in ['E', 'D', 'I', 'P', 'Q', 'R', 'S']
+    @assert haskey(FLOAT_TYPES, mode[3:4])
+    if mode[2] == 'E'
+        return RKParameterizationExplicit{FLOAT_TYPES[mode[3:4]]}(stages)
+    elseif mode[2] == 'D'
+        return RKParameterizationDiagonallyImplicit{FLOAT_TYPES[mode[3:4]]}(stages)
+    elseif mode[2] == 'I'
+        return RKParameterizationImplicit{FLOAT_TYPES[mode[3:4]]}(stages)
+    elseif mode[2] == 'P'
+        return RKParameterizationParallelExplicit{FLOAT_TYPES[mode[3:4]]}(stages, 2)
+    elseif mode[2] == 'Q'
+        return RKParameterizationParallelExplicit{FLOAT_TYPES[mode[3:4]]}(stages, 4)
+    elseif mode[2] == 'R'
+        return RKParameterizationParallelExplicit{FLOAT_TYPES[mode[3:4]]}(stages, 8)
+    elseif mode[2] == 'S'
+        return RKParameterizationParallelExplicit{FLOAT_TYPES[mode[3:4]]}(stages, 16)
+    end
+end
+
+
+################################################################################
+
+
 export construct_optimizer, reset_occurred
 
 
@@ -78,6 +141,48 @@ end
 ################################################################################
 
 
+export compute_max_residual, compute_rms_gradient, compute_max_coeff,
+    compute_residual_score, compute_gradient_score, compute_coeff_score
+
+
+function compute_max_residual(opt)
+    prob = opt.objective_function
+    prob.param(prob.A, prob.b, opt.current_point)
+    return maximum(abs, prob.ev(prob.A, prob.b))
+end
+
+
+function compute_rms_gradient(opt)
+    grad = opt.current_gradient
+    return sqrt(norm2(grad) / length(grad))
+end
+
+
+function compute_max_coeff(opt) # TODO: QR
+    prob = opt.objective_function
+    prob.param(prob.A, prob.b, opt.current_point)
+    return max(maximum(abs, prob.A), maximum(abs, prob.b))
+end
+
+
+compute_residual_score(opt) = round(Int, clamp(
+    -500 * log10(Float64(compute_max_residual(opt))),
+    0.0, 9999.0))
+
+
+compute_gradient_score(opt) = round(Int, clamp(
+    -500 * log10(Float64(compute_rms_gradient(opt))),
+    0.0, 9999.0))
+
+
+compute_coeff_score(opt) = round(Int, clamp(
+    10000 - 2500 * log10(Float64(compute_max_coeff(opt))),
+    0.0, 9999.0))
+
+
+################################################################################
+
+
 export uniform_precision_strings
 
 
@@ -89,11 +194,11 @@ end
 
 function precision_is_sufficient(x::MultiFloat{T,N}, n::Int) where {T,N}
     s = @sprintf("%+.*e", n, x)
-    return MultiFloat{T,N}(s) == renormalize(x)
+    return MultiFloat{T,N}(s) == MultiFloats.renormalize(x)
 end
 
 
-precision_is_sufficient(v::AbstractVector{T}, n::Int) where {U} =
+precision_is_sufficient(v::AbstractVector, n::Int) =
     all(precision_is_sufficient(x, n) for x in v)
 
 
@@ -108,7 +213,7 @@ function find_sufficient_precision(v::AbstractVector{T}) where {T}
 end
 
 
-function uniform_precision_strings(v::Vector{U}; sign::Bool=true) where {U}
+function uniform_precision_strings(v::AbstractVector; sign::Bool=true)
     n = find_sufficient_precision(v)
     if sign
         return [@sprintf("%+.*e", n, x) for x in v]

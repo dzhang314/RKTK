@@ -2,7 +2,6 @@ using Base.Threads
 using DZOptimization
 using DZOptimization.PCG
 using DZOptimization.Kernels: norm2
-using MultiFloats
 using Printf
 using RungeKuttaToolKit
 using RungeKuttaToolKit.RKCost
@@ -33,100 +32,44 @@ if (length(ARGS) < 3) || (length(ARGS) > 5)
 end
 
 
-const WRITE_FILE = !("--no-file" in ARGS)
 const WRITE_TERM = ((stdout isa Base.TTY) && (nthreads() == 1))
+const WRITE_FILE = !("--no-file" in ARGS)
 filter!(arg -> (arg != "--no-file"), ARGS)
 
 
 function fprintln(io::IO, args...)
-    @static if WRITE_FILE
-        println(io, args...)
-        flush(io)
-    end
     @static if WRITE_TERM
         println(stdout, args...)
         flush(stdout)
     end
-    return nothing
-end
-
-
-function ensuredir(dirname)
-    if basename(pwd()) != dirname
-        if !isdir(dirname)
-            mkdir(dirname)
-        end
-        cd(dirname)
+    @static if WRITE_FILE
+        println(io, args...)
+        flush(io)
     end
     return nothing
 end
 
 
-function construct_optimizer(
-    seed::UInt64,
-    prob::RKOCOptimizationProblem{T},
-) where {T}
-    n = prob.param.num_variables
-    return LBFGSOptimizer(prob, prob', QuadraticLineSearch(),
-        random_array(seed, T, n), sqrt(n * eps(T)), n)
+function fprintln_table_header(io::IO, opt)
+    fprintln(io, "| ITERATION # |   OBJ. FUNC.   |MAX ABS RESIDUAL" *
+                 "|  RMS GRADIENT  | MAX ABS COEFF. |  STEP  LENGTH  |")
+    fprintln(io, "|-------------|----------------|----------------" *
+                 "|----------------|----------------|----------------|")
+    return nothing
 end
 
 
-function reset_occurred(opt::LBFGSOptimizer)
-    history_length = length(opt._rho)
-    return ((opt.iteration_count[] >= history_length) &&
-            (opt._history_count[] != history_length))
-end
-
-
-function compute_scores(opt)
-    num_residuals = length(opt.objective_function.ev.inv_gamma)
-    num_variables = length(opt.current_point)
-    rms_residual = sqrt(opt.current_objective_value[] / num_residuals)
-    rms_gradient = sqrt(norm2(opt.current_gradient) / num_variables)
-    rms_coeff = sqrt(norm2(opt.current_point) / num_variables)
-    residual_score = round(Int,
-        clamp(-500 * log10(Float64(rms_residual)), 0.0, 9999.0))
-    gradient_score = round(Int,
-        clamp(-500 * log10(Float64(rms_gradient)), 0.0, 9999.0))
-    coeff_score = round(Int,
-        clamp(10000 - 2500 * log10(Float64(rms_coeff)), 0.0, 9999.0))
-    return (residual_score, gradient_score, coeff_score)
-end
-
-
-function compute_table_row(opt)
-    num_residuals = length(opt.objective_function.ev.inv_gamma)
-    num_variables = length(opt.current_point)
-    return @sprintf("|%12d | %.8e | %.8e | %.8e | %.8e |%s",
+function fprintln_table_row(io::IO, opt)
+    fprintln(io, @sprintf("|%12d | %.8e | %.8e | %.8e | %.8e | %.8e |%s",
         opt.iteration_count[],
-        sqrt(opt.current_objective_value[] / num_residuals),
-        sqrt(norm2(opt.current_gradient) / num_variables),
-        max(maximum(abs, opt.current_point)), # TODO: QR
+        opt.current_objective_value[],
+        compute_max_residual(opt),
+        compute_rms_gradient(opt),
+        compute_max_coeff(opt),
         sqrt(norm2(opt.delta_point)),
-        reset_occurred(opt) ? " RESET" : "")
+        reset_occurred(opt) ? " RESET" : ""))
+    return nothing
 end
-
-
-# # TODO: Construct set of seeds rather than filenames
-# const EXISTING_FILES = String[]
-
-
-# function find_existing_file(prefix::AbstractString, suffix::AbstractString)
-#     for filename in EXISTING_FILES
-#         if (length(filename) == 51 &&
-#             startswith(filename, prefix) && endswith(filename, suffix))
-#             return filename
-#         end
-#     end
-#     for filename in readdir()
-#         if (length(filename) == 51 &&
-#             startswith(filename, prefix) && endswith(filename, suffix))
-#             return filename
-#         end
-#     end
-#     return nothing
-# end
 
 
 const TOTAL_ITERATION_COUNT = Atomic{Int}(0)
@@ -134,23 +77,11 @@ const TOTAL_ITERATION_COUNT = Atomic{Int}(0)
 
 function search(
     seed::UInt64,
+    prefix::AbstractString,
     prob::RKOCOptimizationProblem,
 )
-    filebase = "RKTK-06-07-BEM1"
-    filename = @sprintf("%s-XXXX-XXXX-XXXX-%016X.txt", filebase, seed)
-    @assert length(filename) == 51
-
-    # if WRITE_FILE
-    #     existing = find_existing_file(filename[1:16], filename[31:51])
-    #     if isnothing(existing)
-    #         @printf("Computing %s...\n", filename)
-    #     else
-    #         @printf("%s already exists.\n", existing)
-    #         return nothing
-    #     end
-    # end
-
     opt = construct_optimizer(seed, prob)
+    filename = @sprintf("%s-XXXX-XXXX-XXXX-%016X.txt", prefix, seed)
 
     @static if WRITE_FILE
         io = open(filename, "w")
@@ -158,17 +89,16 @@ function search(
         io = devnull
     end
 
+    ######################################################## PRINT INITIAL POINT
+
     for line in uniform_precision_strings(opt.current_point)
         fprintln(io, line)
     end
 
-    fprintln(io)
+    fprintln(io) ################################# RUN OPTIMIZER AND PRINT TABLE
 
-    fprintln(io, "| ITERATION # |  RMS RESIDUAL  |  RMS GRADIENT  " *
-                 "| MAX ABS COEFF. |  STEP  LENGTH  |")
-    fprintln(io, "|-------------|----------------|----------------" *
-                 "|----------------|----------------|")
-    fprintln(io, compute_table_row(opt))
+    fprintln_table_header(io, opt)
+    fprintln_table_row(io, opt)
     failed = false
     start_time = time_ns()
     while true
@@ -176,35 +106,37 @@ function search(
         if opt.has_terminated[]
             break
         end
-        if (any(!(abs(c) <= 1024.0) for c in opt.objective_function.A) ||
-            any(!(abs(c) <= 1024.0) for c in opt.objective_function.b))
+        if !(compute_max_coeff(opt) < 100.0)
             failed = true
             break
         end
         if reset_occurred(opt) || (opt.iteration_count[] % 1000 == 0)
-            fprintln(io, compute_table_row(opt))
+            fprintln_table_row(io, opt)
         end
     end
     end_time = time_ns()
-    fprintln(io, compute_table_row(opt))
+    fprintln_table_row(io, opt)
 
-    fprintln(io)
+    fprintln(io) ############################################# PRINT FINAL POINT
 
     for line in uniform_precision_strings(opt.current_point)
         fprintln(io, line)
     end
 
+    ########################################################## CREATE FINAL FILE
+
     if WRITE_FILE
         close(io)
     end
 
-    residual_score, gradient_score, coeff_score = compute_scores(opt)
     finalname = @sprintf("%s-%04d-%04d-%s-%016X.txt",
-        filebase, residual_score, gradient_score,
-        failed ? "FAIL" : @sprintf("%04d", coeff_score), seed)
+        prefix, compute_residual_score(opt), compute_gradient_score(opt),
+        failed ? "FAIL" : @sprintf("%04d", compute_coeff_score(opt)), seed)
     if WRITE_FILE
         mv(filename, finalname)
     end
+
+    ######################################################### PRINT ELAPSED TIME
 
     elapsed_time = (end_time - start_time) / 1.0e9
     atomic_add!(TOTAL_ITERATION_COUNT, opt.iteration_count[])
@@ -216,30 +148,36 @@ end
 const SEED_COUNTER = Atomic{UInt64}(0)
 
 
-function thread_work(max_seed::UInt64)
+function thread_work(
+    prefix::AbstractString,
+    order::Int,
+    param::AbstractRKParameterization{T},
+    max_seed::UInt64,
+) where {T}
     prob = RKOCOptimizationProblem(
-        RKOCEvaluator{Float64}(6, 7),
-        RKCostL2{Float64}(),
-        RKParameterizationExplicit{Float64}(7))
+        RKOCEvaluator{T}(order, param.num_stages),
+        RKCostL2{T}(), param)
     while true
         seed = atomic_add!(SEED_COUNTER, one(UInt64))
         if seed > max_seed
             break
         end
-        search(seed, prob)
+        search(seed, prefix, prob)
     end
 end
 
 
 function main(order::Int, stages::Int, min_seed::UInt64, max_seed::UInt64)
+    dirname = @sprintf("RKTK-%02d-%02d-BE", order, stages)
+    prefix = @sprintf("RKTK-%02d-%02d-BEM1", order, stages)
     if WRITE_FILE
-        ensuredir(@sprintf("RKTK-06-07-BEM1"))
-        # append!(EXISTING_FILES, readdir())
+        ensuredir(dirname)
     end
     SEED_COUNTER[] = min_seed
     start_time = time_ns()
     @threads for _ = 1:nthreads()
-        thread_work(max_seed)
+        param = compute_parameterization(ARGS[1], stages)
+        thread_work(prefix, order, param, max_seed)
     end
     end_time = time_ns()
     elapsed_time = (end_time - start_time) / 1.0e9
@@ -251,10 +189,13 @@ end
 function parse_arguments()
     try
         @assert 3 <= length(ARGS) <= 5
+
         order = parse(Int, ARGS[2])
         @assert 0 < order < 100
+
         stages = parse(Int, ARGS[3])
         @assert 0 < stages < 100
+
         min_seed = typemin(UInt64)
         max_seed = typemax(UInt64)
         if length(ARGS) == 4
@@ -264,7 +205,9 @@ function parse_arguments()
             max_seed = parse(UInt64, ARGS[5])
         end
         @assert min_seed <= max_seed
+
         return (order, stages, min_seed, max_seed)
+
     catch e
         if typeof(e) in [
             ArgumentError, AssertionError, BoundsError, OverflowError
