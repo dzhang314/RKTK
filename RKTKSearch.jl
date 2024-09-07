@@ -51,16 +51,16 @@ end
 
 
 function fprintln_table_header(io::IO, opt)
-    fprintln(io, "| ITERATION # |   OBJ. FUNC.   |MAX ABS RESIDUAL" *
-                 "|  RMS GRADIENT  | MAX ABS COEFF. |  STEP  LENGTH  |")
-    fprintln(io, "|-------------|----------------|----------------" *
-                 "|----------------|----------------|----------------|")
+    fprintln(io, "| ITERATION |  COST FUNC.  | MAX RESIDUAL " *
+                 "| RMS GRADIENT |  MAX COEFF.  |  STEPLENGTH  |")
+    fprintln(io, "|-----------|--------------|--------------" *
+                 "|--------------|--------------|--------------|")
     return nothing
 end
 
 
 function fprintln_table_row(io::IO, opt)
-    fprintln(io, @sprintf("|%12d | %.8e | %.8e | %.8e | %.8e | %.8e |%s",
+    fprintln(io, @sprintf("|%10d | %.6e | %.6e | %.6e | %.6e | %.6e |%s",
         opt.iteration_count[],
         opt.current_objective_value[],
         compute_max_residual(opt),
