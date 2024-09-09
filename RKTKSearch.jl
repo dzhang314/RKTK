@@ -1,7 +1,6 @@
 using Base.Threads
 using DZOptimization
 using DZOptimization.PCG
-using DZOptimization.Kernels: norm2
 using Printf
 using RungeKuttaToolKit
 using RungeKuttaToolKit.RKCost
@@ -19,8 +18,7 @@ Usage: julia [jl_options] $PROGRAM_FILE <mode> <order> <stages> [seed] [seed]
 <mode> is a four-character RKTK mode string as described in the RKTK manual.
 <order> and <stages> are positive integers between 1 and 99.
 
-If no seed is specified, then a search is performed for every possible seed
-    from 0 to 2^64 - 1.
+If no seed is specified, every possible seed from 0 to 2^64 - 1 is used.
 If one seed is specified, it is treated as an upper bound (inclusive).
 If two seeds are specified, they are treated as lower and upper bounds.
 """
@@ -28,8 +26,7 @@ If two seeds are specified, they are treated as lower and upper bounds.
 
 const WRITE_TERM = ((stdout isa Base.TTY || stdout isa Base.PipeEndpoint) &&
                     (nthreads() == 1))
-const WRITE_FILE = !("--no-file" in ARGS)
-filter!(arg -> (arg != "--no-file"), ARGS)
+const WRITE_FILE = !get_flag!(["no-file"])
 
 
 function fprintln(io::IO, args...)
@@ -41,28 +38,6 @@ function fprintln(io::IO, args...)
         println(io, args...)
         flush(io)
     end
-    return nothing
-end
-
-
-function fprintln_table_header(io::IO, opt)
-    fprintln(io, "| ITERATION |  COST FUNC.  | MAX RESIDUAL " *
-                 "| RMS GRADIENT |  MAX COEFF.  |  STEPLENGTH  |")
-    fprintln(io, "|-----------|--------------|--------------" *
-                 "|--------------|--------------|--------------|")
-    return nothing
-end
-
-
-function fprintln_table_row(io::IO, opt)
-    fprintln(io, @sprintf("|%10d | %.6e | %.6e | %.6e | %.6e | %.6e |%s",
-        opt.iteration_count[],
-        opt.current_objective_value[],
-        compute_max_residual(opt),
-        compute_rms_gradient(opt),
-        compute_max_coeff(opt),
-        sqrt(norm2(opt.delta_point)),
-        reset_occurred(opt) ? " RESET" : ""))
     return nothing
 end
 
@@ -92,8 +67,9 @@ function search(
 
     fprintln(io) ################################# RUN OPTIMIZER AND PRINT TABLE
 
-    fprintln_table_header(io, opt)
-    fprintln_table_row(io, opt)
+    fprintln(io, TABLE_HEADER)
+    fprintln(io, TABLE_SEPARATOR)
+    fprintln(io, compute_table_row(opt))
     failed = false
     start_time = time_ns()
     while true
@@ -106,11 +82,11 @@ function search(
             break
         end
         if reset_occurred(opt) || (opt.iteration_count[] % 1000 == 0)
-            fprintln_table_row(io, opt)
+            fprintln(io, compute_table_row(opt))
         end
     end
     end_time = time_ns()
-    fprintln_table_row(io, opt)
+    fprintln(io, compute_table_row(opt))
 
     fprintln(io) ############################################# PRINT FINAL POINT
 
@@ -193,7 +169,7 @@ function main(
     SEED_COUNTER[] = min_seed
     start_time = time_ns()
     @threads for _ = 1:nthreads()
-        param = compute_parameterization(ARGS[1], stages)
+        param = get_parameterization(ARGS[1], stages)
         thread_work(prefix, order, param, max_seed)
     end
     end_time = time_ns()
@@ -236,7 +212,7 @@ function parse_arguments()
             ArgumentError, AssertionError, BoundsError, OverflowError
         ]
             print(USAGE_STRING)
-            exit(EXIT_INVALID_ARG_FORMAT)
+            exit(EXIT_INVALID_ARGS)
         else
             rethrow(e)
         end

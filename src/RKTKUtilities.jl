@@ -1,6 +1,7 @@
 module RKTKUtilities
 
 
+using Base.Unicode: category_code, UTF8PROC_CATEGORY_PC, UTF8PROC_CATEGORY_PD
 using DZOptimization: LBFGSOptimizer, QuadraticLineSearch
 using DZOptimization.Kernels: norm2
 using DZOptimization.PCG: random_array
@@ -8,16 +9,45 @@ using MultiFloats
 using Printf: @sprintf
 using RungeKuttaToolKit: RKOCOptimizationProblem
 using RungeKuttaToolKit.RKParameterization
+using Unicode: isequal_normalized
 
 
 #################################################################### ERROR CODES
 
 
-export EXIT_INVALID_ARG_COUNT, EXIT_INVALID_ARG_FORMAT
+export EXIT_INVALID_ARGS
 
 
-const EXIT_INVALID_ARG_COUNT = 1
-const EXIT_INVALID_ARG_FORMAT = 2
+const EXIT_INVALID_ARGS = 1
+
+
+################################################################################
+
+
+export get_flag!
+
+
+@inline function underscore_chartransform(c::Integer)
+    cat = category_code(c)
+    return ((cat == UTF8PROC_CATEGORY_PC) || (cat == UTF8PROC_CATEGORY_PD) ?
+            convert(typeof(c), '-') : c)
+end
+
+
+@inline insensitive_match(s::AbstractString, t::AbstractString) =
+    isequal_normalized(s, t; casefold=true, stripmark=true,
+        chartransform=underscore_chartransform)
+
+
+is_arg(s, names) = startswith(s, "--") && any(
+    insensitive_match(s[3:end], name) for name in names)
+
+
+function get_flag!(names)
+    matches = [is_arg(arg, names) for arg in ARGS]
+    deleteat!(ARGS, matches)
+    return any(matches)
+end
 
 
 ################################################################################
@@ -43,7 +73,7 @@ end
 ################################################################################
 
 
-export is_valid_mode, compute_parameterization
+export is_valid_mode, get_type, get_parameterization
 
 
 const FLOAT_TYPES = Dict(
@@ -85,7 +115,16 @@ is_valid_mode(mode::AbstractString) =
     haskey(FLOAT_TYPES, mode[3:4])
 
 
-function compute_parameterization(mode::AbstractString, stages::Int)
+function get_type(mode::AbstractString)
+    result = FLOAT_TYPES[mode[3:4]]
+    if result == BigFloat
+        setprecision(BigFloat, FLOAT_PRECISIONS[mode[3:4]])
+    end
+    return result
+end
+
+
+function get_parameterization(mode::AbstractString, stages::Int)
     @assert is_valid_mode(mode)
     if mode[2] == 'E'
         return RKParameterizationExplicit{FLOAT_TYPES[mode[3:4]]}(stages)
@@ -121,6 +160,17 @@ function construct_optimizer(
 end
 
 
+function construct_optimizer(
+    prob::RKOCOptimizationProblem{T},
+    x::AbstractVector{T},
+) where {T}
+    n = length(x)
+    @assert n == prob.param.num_variables
+    return LBFGSOptimizer(prob, prob', QuadraticLineSearch(),
+        x, sqrt(n * eps(T)), n)
+end
+
+
 function reset_occurred(opt::LBFGSOptimizer)
     history_length = length(opt._rho)
     return ((opt.iteration_count[] >= history_length) &&
@@ -132,7 +182,8 @@ end
 
 
 export compute_max_residual, compute_rms_gradient, compute_max_coeff,
-    compute_residual_score, compute_gradient_score, compute_coeff_score
+    compute_residual_score, compute_gradient_score, compute_coeff_score,
+    TABLE_HEADER, TABLE_SEPARATOR, compute_table_row
 
 
 function compute_max_residual(opt)
@@ -168,6 +219,21 @@ compute_gradient_score(opt) = round(Int, clamp(
 compute_coeff_score(opt) = round(Int, clamp(
     10000 - 2500 * log10(Float64(compute_max_coeff(opt))),
     0.0, 9999.0))
+
+
+const TABLE_HEADER = "| ITERATION |  COST FUNC.  | MAX RESIDUAL | RMS GRADIENT |  MAX COEFF.  |  STEPLENGTH  |"
+const TABLE_SEPARATOR = "|-----------|--------------|--------------|--------------|--------------|--------------|"
+
+
+compute_table_row(opt) = @sprintf(
+    "|%10d | %.6e | %.6e | %.6e | %.6e | %.6e |%s",
+    opt.iteration_count[],
+    opt.current_objective_value[],
+    compute_max_residual(opt),
+    compute_rms_gradient(opt),
+    compute_max_coeff(opt),
+    sqrt(norm2(opt.delta_point)),
+    reset_occurred(opt) ? " RESET" : "")
 
 
 ################################################################################
@@ -223,6 +289,64 @@ const RKTK_FILENAME_REGEX =
     r"^RKTK-([0-9]{2})-([0-9]{2})-([0-9A-Za-z]{4})-([0-9]{4}|FAIL)-([0-9]{4}|FAIL)-([0-9]{4}|FAIL)-([0-9A-Fa-f]{16}).txt$"
 const RKTK_INCOMPLETE_FILENAME_REGEX =
     r"^RKTK-([0-9]{2})-([0-9]{2})-([0-9A-Za-z]{4})-XXXX-XXXX-XXXX-([0-9A-Fa-f]{16}).txt$"
+
+
+################################################################################
+
+
+export parse_floats, ParsedRKTKTableRow, full_match, partial_match
+
+
+function parse_floats(::Type{T}, data::AbstractString) where {T}
+    return parse.(T, split(strip(data, '\n'), '\n'))
+end
+
+
+function parse_floats(::Type{MultiFloat{T,N}}, data::AbstractString) where {T,N}
+    return MultiFloat{T,N}.(split(strip(data, '\n'), '\n'))
+end
+
+
+struct ParsedRKTKTableRow
+    iteration::Int
+    cost_func::BigFloat
+    max_residual::BigFloat
+    rms_gradient::BigFloat
+    max_coeff::BigFloat
+    steplength::BigFloat
+
+    function ParsedRKTKTableRow(row::AbstractString)
+        @assert count('|', row) == 7
+        entries = split(row, '|')
+        @assert isempty(entries[1])
+        iteration = parse(Int, strip(entries[2]))
+        cost_func = parse(BigFloat, strip(entries[3]))
+        max_residual = parse(BigFloat, strip(entries[4]))
+        rms_gradient = parse(BigFloat, strip(entries[5]))
+        max_coeff = parse(BigFloat, strip(entries[6]))
+        steplength = parse(BigFloat, strip(entries[7]))
+        return new(iteration, cost_func, max_residual,
+            rms_gradient, max_coeff, steplength)
+    end
+end
+
+
+function full_match(r::ParsedRKTKTableRow, s::ParsedRKTKTableRow)
+    return ((r.iteration == s.iteration) &&
+            (r.cost_func == s.cost_func) &&
+            (r.max_residual == s.max_residual) &&
+            (r.rms_gradient == s.rms_gradient) &&
+            (r.max_coeff == s.max_coeff) &&
+            (r.steplength == s.steplength))
+end
+
+
+function partial_match(r::ParsedRKTKTableRow, s::ParsedRKTKTableRow)
+    return ((r.cost_func == s.cost_func) &&
+            (r.max_residual == s.max_residual) &&
+            (r.rms_gradient == s.rms_gradient) &&
+            (r.max_coeff == s.max_coeff))
+end
 
 
 end # module RKTKUtilities
