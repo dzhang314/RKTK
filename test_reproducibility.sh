@@ -2,24 +2,22 @@
 
 set -euo pipefail
 
-output=$(julia -O3 RKTKSearch.jl 10 16 0x093C 0x093C --no-file)
+output=$(julia -O3 RKTKSearch.jl BEM1 6 7 0x17 0x17 --no-file)
 hash=$(echo "$output" | md5sum | awk '{print $1}')
 
-# Compare the computed hash with the expected hash
-if [[ "$hash" == "1ae2777f16e4fd3e5a5034e53f254ef2" ]]; then
-    echo "Reproducibility test passed."
+if [[ "$hash" == "23d7aa6a0221fa38279740fad7b93818" ]]; then
+    echo "Reproducibility test 1 passed."
 else
-    echo "Reproducibility test failed."
+    echo "Reproducibility test 1 failed."
     exit 1
 fi
 
-output=$(julia -O3 RKTKProjectionSearch.jl 7 9 0x001A 0x001A --no-file)
+output=$(julia -O3 RKTKSearch.jl BEM1 7 9 0x01 0x01 --no-file)
 hash=$(echo "$output" | md5sum | awk '{print $1}')
 
-# Compare the computed hash with the expected hash
-if [[ "$hash" == "694025855db63f8d22318cfd263bcd59" ]]; then
-    echo "Projection reproducibility test passed."
+if [[ "$hash" == "326e91bc336c090ab19f9a24475ee68d" ]]; then
+    echo "Reproducibility test 2 passed."
 else
-    echo "Projection reproducibility test failed."
-    exit 1
+    echo "Reproducibility test 2 failed."
+    exit 2
 fi

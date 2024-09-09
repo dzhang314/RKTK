@@ -26,13 +26,8 @@ If two seeds are specified, they are treated as lower and upper bounds.
 """
 
 
-if (length(ARGS) < 3) || (length(ARGS) > 5)
-    print(stderr, USAGE_STRING)
-    exit(EXIT_INVALID_ARG_COUNT)
-end
-
-
-const WRITE_TERM = ((stdout isa Base.TTY) && (nthreads() == 1))
+const WRITE_TERM = ((stdout isa Base.TTY || stdout isa Base.PipeEndpoint) &&
+                    (nthreads() == 1))
 const WRITE_FILE = !("--no-file" in ARGS)
 filter!(arg -> (arg != "--no-file"), ARGS)
 
@@ -125,23 +120,19 @@ function search(
 
     ########################################################## CREATE FINAL FILE
 
-    if WRITE_FILE
-        close(io)
-    end
-
     finalname = @sprintf("%s-%04d-%04d-%s-%016X.txt",
         prefix, compute_residual_score(opt), compute_gradient_score(opt),
         failed ? "FAIL" : @sprintf("%04d", compute_coeff_score(opt)), seed)
-    if WRITE_FILE
-        mv(filename, finalname)
-    end
 
-    ######################################################### PRINT ELAPSED TIME
-
-    elapsed_time = (end_time - start_time) / 1.0e9
     atomic_add!(TOTAL_ITERATION_COUNT, opt.iteration_count[])
-    @printf("Finished computing %s.\nPerformed %d L-BFGS iterations in %g seconds (%g iterations per second).\n",
-        finalname, opt.iteration_count[], elapsed_time, opt.iteration_count[] / elapsed_time)
+
+    if WRITE_FILE
+        close(io)
+        mv(filename, finalname)
+        elapsed_time = (end_time - start_time) / 1.0e9
+        @printf("Finished computing %s.\nPerformed %d L-BFGS iterations in %g seconds (%g iterations per second).\n",
+            finalname, opt.iteration_count[], elapsed_time, opt.iteration_count[] / elapsed_time)
+    end
 end
 
 
@@ -187,8 +178,10 @@ function main(
     end
     end_time = time_ns()
     elapsed_time = (end_time - start_time) / 1.0e9
-    @printf("In total, performed %d L-BFGS iterations in %g seconds (%g iterations per second).\n",
-        TOTAL_ITERATION_COUNT[], elapsed_time, TOTAL_ITERATION_COUNT[] / elapsed_time)
+    if WRITE_FILE
+        @printf("In total, performed %d L-BFGS iterations in %g seconds (%g iterations per second).\n",
+            TOTAL_ITERATION_COUNT[], elapsed_time, TOTAL_ITERATION_COUNT[] / elapsed_time)
+    end
 end
 
 
