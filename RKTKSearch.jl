@@ -137,6 +137,7 @@ end
 
 
 const SEED_COUNTER = Atomic{UInt64}(0)
+const PRECOMPUTED_SEEDS = Set{UInt64}()
 
 
 function thread_work(
@@ -153,7 +154,9 @@ function thread_work(
         if seed > max_seed
             break
         end
-        search(seed, prefix, prob)
+        if !(seed in PRECOMPUTED_SEEDS)
+            search(seed, prefix, prob)
+        end
     end
 end
 
@@ -169,7 +172,24 @@ function main(
     prefix = @sprintf("RKTK-%02d-%02d-%s", order, stages, mode)
     if WRITE_FILE
         ensuredir(dirname)
+        for filename in readdir()
+            if startswith(filename, prefix)
+                if !isnothing(match(RKTK_INCOMPLETE_FILENAME_REGEX, filename))
+                    rm(filename)
+                else
+                    m = match(RKTK_FILENAME_REGEX, filename)
+                    if !isnothing(m)
+                        push!(PRECOMPUTED_SEEDS, parse(UInt64, m[7]; base=16))
+                    end
+                end
+            end
+        end
+        if !isempty(PRECOMPUTED_SEEDS)
+            @printf("Found %d precomputed RKTK files.\n",
+                length(PRECOMPUTED_SEEDS))
+        end
     end
+
     SEED_COUNTER[] = min_seed
     start_time = time_ns()
     @threads for _ = 1:nthreads()
@@ -177,8 +197,9 @@ function main(
         thread_work(prefix, order, param, max_seed)
     end
     end_time = time_ns()
-    elapsed_time = (end_time - start_time) / 1.0e9
+
     if WRITE_FILE
+        elapsed_time = (end_time - start_time) / 1.0e9
         @printf("In total, performed %d L-BFGS iterations in %g seconds (%g iterations per second).\n",
             TOTAL_ITERATION_COUNT[], elapsed_time, TOTAL_ITERATION_COUNT[] / elapsed_time)
     end

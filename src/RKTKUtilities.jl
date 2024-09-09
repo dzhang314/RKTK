@@ -213,21 +213,19 @@ function uniform_precision_strings(v::AbstractVector; sign::Bool=true)
 end
 
 
+################################################################################
+
+
+export RKTK_FILENAME_REGEX, RKTK_INCOMPLETE_FILENAME_REGEX
+
+
+const RKTK_FILENAME_REGEX =
+    r"^RKTK-([0-9]{2})-([0-9]{2})-([0-9A-Za-z]{4})-([0-9]{4}|FAIL)-([0-9]{4}|FAIL)-([0-9]{4}|FAIL)-([0-9A-Fa-f]{16}).txt$"
+const RKTK_INCOMPLETE_FILENAME_REGEX =
+    r"^RKTK-([0-9]{2})-([0-9]{2})-([0-9A-Za-z]{4})-XXXX-XXXX-XXXX-([0-9A-Fa-f]{16}).txt$"
+
+
 end # module RKTKUtilities
-
-
-# using Dates: DateTime, datetime2unix
-
-
-# const RKTK_SEARCH_FILENAME_REGEX =
-#     r"^RKTK-(..)-(..)-(....)-(....)-(....)-(................)\.txt$"
-# const RKTK_INCOMPLETE_FILENAME_REGEX =
-#     r"^RKTK-([0-9]{2})-([0-9]{2})-(XXXX)-(XXXX)-(XXXX)-([0-9A-F]{16})\.txt$"
-# const RKTK_COMPLETE_FILENAME_REGEX =
-#     r"^RKTK-([0-9]{2})-([0-9]{2})-([0-9]{4})-([0-9]{4})-([0-9]{4})-([0-9A-F]{16})\.txt$"
-# const RKTK_SEARCH_DIRECTORY_REGEX = r"^RKTK-SEARCH-([0-9]{2})-([0-9]{2})$"
-# const FILE_CHUNK_SIZE = 4096
-# const UNIX_TIME_2024 = datetime2unix(DateTime(2024))
 
 
 # function read_rktk_search_directory(dirpath::AbstractString)
@@ -315,15 +313,6 @@ end # module RKTKUtilities
 #         result += 1
 #     end
 #     return result
-# end
-
-
-# function find_first_missing_key(dict::Dict{K,V}) where {K,V}
-#     for key = typemin(K):typemax(K)
-#         if !haskey(dict, key)
-#             return key
-#         end
-#     end
 # end
 
 
