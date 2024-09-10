@@ -1,5 +1,6 @@
 using Base.Threads
 using DZOptimization.PCG
+using Printf
 using RungeKuttaToolKit
 using RungeKuttaToolKit.RKCost
 
@@ -49,6 +50,12 @@ function assert_rktk_file_valid(m::RegexMatch)
 
     blocks = split(read(m.match, String), "\n\n")
     @assert length(blocks) == 3
+    @assert !startswith(blocks[1], '\n')
+    @assert !endswith(blocks[1], '\n')
+    @assert !startswith(blocks[2], '\n')
+    @assert !endswith(blocks[2], '\n')
+    @assert !startswith(blocks[3], '\n')
+    @assert endswith(blocks[3], '\n')
 
     initial = parse_floats(T, blocks[1])
     @assert initial == random_array(seed, T, param.num_variables)
@@ -88,6 +95,9 @@ function assert_rktk_file_valid(m::RegexMatch)
 end
 
 
+const VALID_FILE_COUNTER = Atomic{UInt64}(0)
+
+
 function process_file(filename::AbstractString)
     @assert isfile(filename)
 
@@ -112,6 +122,7 @@ function process_file(filename::AbstractString)
 
     try
         assert_rktk_file_valid(m)
+        atomic_add!(VALID_FILE_COUNTER, one(UInt64))
         @static if VERBOSE
             println("Successfully validated RKTK file: $filename")
         end
@@ -162,7 +173,12 @@ function main()
         println(stderr, USAGE_STRING)
         exit(EXIT_INVALID_ARGS)
     end
+    start_time = time_ns()
     process_directory()
+    end_time = time_ns()
+    elapsed_time = (end_time - start_time) / 1.0e9
+    @printf("Successfully validated %d RKTK files in %g seconds (%g files per second).\n",
+        VALID_FILE_COUNTER[], elapsed_time, VALID_FILE_COUNTER[] / elapsed_time)
 end
 
 
