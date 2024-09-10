@@ -2,12 +2,14 @@ module RKTKUtilities
 
 
 using Base.Unicode: category_code, UTF8PROC_CATEGORY_PC, UTF8PROC_CATEGORY_PD
+using Dates: DateTime, datetime2unix
 using DZOptimization: LBFGSOptimizer, QuadraticLineSearch
 using DZOptimization.Kernels: norm2
 using DZOptimization.PCG: random_array
 using MultiFloats
-using Printf: @sprintf
-using RungeKuttaToolKit: RKOCOptimizationProblem
+using Printf
+using RungeKuttaToolKit
+using RungeKuttaToolKit.RKCost
 using RungeKuttaToolKit.RKParameterization
 using Unicode: isequal_normalized
 
@@ -15,13 +17,16 @@ using Unicode: isequal_normalized
 #################################################################### ERROR CODES
 
 
-export EXIT_INVALID_ARGS
+export EXIT_INVALID_ARGS, EXIT_RKTK_DATABASE_DOES_NOT_EXIST,
+    EXIT_INSIDE_RKTK_DATABASE
 
 
 const EXIT_INVALID_ARGS = 1
+const EXIT_RKTK_DATABASE_DOES_NOT_EXIST = 2
+const EXIT_INSIDE_RKTK_DATABASE = 3
 
 
-################################################################################
+############################################################### ARGUMENT PARSING
 
 
 export get_flag!
@@ -50,10 +55,13 @@ function get_flag!(names)
 end
 
 
-################################################################################
+########################################################### FILESYSTEM UTILITIES
 
 
-export ensuredir
+export UNIX_TIME_2024, ensuredir, files_are_identical
+
+
+const UNIX_TIME_2024 = datetime2unix(DateTime(2024))
 
 
 function ensuredir(path::AbstractString)
@@ -67,6 +75,35 @@ function ensuredir(path::AbstractString)
         cd(path)
     end
     return nothing
+end
+
+
+const FILE_CHUNK_SIZE = 67108864 # 64 MiB
+
+
+function files_are_identical(p::AbstractString, q::AbstractString)
+    @assert isfile(p)
+    @assert isfile(q)
+    if basename(p) != basename(q)
+        return false
+    end
+    return open(p, "r") do f
+        return open(q, "r") do g
+            seekend(f)
+            seekend(g)
+            if position(f) != position(g)
+                return false
+            end
+            seekstart(f)
+            seekstart(g)
+            while !(eof(f) || eof(g))
+                if read(f, FILE_CHUNK_SIZE) != read(g, FILE_CHUNK_SIZE)
+                    return false
+                end
+            end
+            return eof(f) && eof(g)
+        end
+    end
 end
 
 
@@ -282,19 +319,22 @@ end
 ################################################################################
 
 
-export RKTK_FILENAME_REGEX, RKTK_INCOMPLETE_FILENAME_REGEX
+export RKTK_FILENAME_REGEX, RKTK_INCOMPLETE_FILENAME_REGEX,
+    RKTK_DIRECTORY_REGEX
 
 
 const RKTK_FILENAME_REGEX =
     r"^RKTK-([0-9]{2})-([0-9]{2})-([0-9A-Za-z]{4})-([0-9]{4}|FAIL)-([0-9]{4}|FAIL)-([0-9]{4}|FAIL)-([0-9A-Fa-f]{16}).txt$"
 const RKTK_INCOMPLETE_FILENAME_REGEX =
     r"^RKTK-([0-9]{2})-([0-9]{2})-([0-9A-Za-z]{4})-XXXX-XXXX-XXXX-([0-9A-Fa-f]{16}).txt$"
+const RKTK_DIRECTORY_REGEX =
+    r"^RKTK-([0-9]{2})-([0-9]{2})-([0-9A-Za-z]{2})$"
 
 
 ################################################################################
 
 
-export parse_floats, ParsedRKTKTableRow, full_match, partial_match
+export assert_rktk_file_valid
 
 
 function parse_floats(::Type{T}, data::AbstractString) where {T}
@@ -349,100 +389,68 @@ function partial_match(r::ParsedRKTKTableRow, s::ParsedRKTKTableRow)
 end
 
 
+function assert_rktk_file_valid(m::RegexMatch)
+    @assert m.regex == RKTK_FILENAME_REGEX
+
+    order = parse(Int, m[1]; base=10)
+    stages = parse(Int, m[2]; base=10)
+    mode = m[3]
+    residual_score = parse(Int, m[4]; base=10)
+    gradient_score = parse(Int, m[5]; base=10)
+    coeff_score = m[6] == "FAIL" ? -1 : parse(Int, m[6])
+    seed = parse(UInt64, m[7]; base=16)
+
+    T = get_type(mode)
+    param = get_parameterization(mode, stages)
+    prob = RKOCOptimizationProblem(
+        RKOCEvaluator{T}(order, param.num_stages),
+        RKCostL2{T}(), param)
+
+    blocks = split(read(m.match, String), "\n\n")
+    @assert length(blocks) == 3
+    @assert !startswith(blocks[1], '\n')
+    @assert !endswith(blocks[1], '\n')
+    @assert !startswith(blocks[2], '\n')
+    @assert !endswith(blocks[2], '\n')
+    @assert !startswith(blocks[3], '\n')
+    @assert endswith(blocks[3], '\n')
+
+    initial = parse_floats(T, blocks[1])
+    @assert initial == random_array(seed, T, param.num_variables)
+
+    table = split(strip(blocks[2], '\n'), '\n')
+    @assert length(table) >= 4
+    @assert table[1] == TABLE_HEADER
+    @assert table[2] == TABLE_SEPARATOR
+
+    table = ParsedRKTKTableRow.(table[3:end])
+    @assert issorted(row.iteration for row in table)
+    @assert issorted(row.cost_func for row in table; rev=true)
+    @assert all(!signbit(row.max_residual) for row in table)
+    @assert all(!signbit(row.rms_gradient) for row in table)
+    @assert all(!signbit(row.max_coeff) for row in table)
+    @assert all(!signbit(row.steplength) for row in table)
+
+    final = parse_floats(T, blocks[3])
+    @assert length(final) == param.num_variables
+
+    opt_initial = construct_optimizer(prob, initial)
+    initial_row = ParsedRKTKTableRow(compute_table_row(opt_initial))
+    opt_final = construct_optimizer(prob, final)
+    final_row = ParsedRKTKTableRow(compute_table_row(opt_final))
+    @assert full_match(initial_row, table[1])
+    @assert partial_match(final_row, table[end])
+
+    @assert compute_residual_score(opt_final) == residual_score
+    @assert compute_gradient_score(opt_final) == gradient_score
+    if coeff_score == -1
+        @assert compute_coeff_score(opt_final) <= 5000
+    else
+        @assert compute_coeff_score(opt_final) == coeff_score
+    end
+
+    return nothing
+end
+
+
 end # module RKTKUtilities
-
-
-# function read_rktk_search_directory(dirpath::AbstractString)
-#     @assert isdir(dirpath)
-#     result = Dict{UInt64,String}()
-#     orders = Set{Int}()
-#     stages = Set{Int}()
-#     found = false
-#     for filename in readdir(dirpath; sort=false)
-#         filepath = abspath(joinpath(dirpath, filename))
-#         if isfile(filepath)
-#             m = match(RKTK_SEARCH_FILENAME_REGEX, filename)
-#             if !isnothing(m)
-#                 found = true
-#                 @assert mtime(filepath) > UNIX_TIME_2024
-#                 m = match(RKTK_COMPLETE_FILENAME_REGEX, filename)
-#                 @assert !isnothing(m)
-#                 push!(orders, parse(Int, m[1]; base=10))
-#                 push!(stages, parse(Int, m[2]; base=10))
-#                 id = parse(UInt64, m[6]; base=16)
-#                 @assert !haskey(result, id)
-#                 result[id] = filename
-#             end
-#         end
-#     end
-#     if found
-#         @assert isone(length(orders))
-#         @assert isone(length(stages))
-#     end
-#     return result
-# end
-
-
-# function read_rktk_database(dirpath::AbstractString)
-#     @assert isdir(dirpath)
-#     result = Dict{Tuple{Int,Int},Tuple{String,Dict{UInt64,String}}}()
-#     for dirname in readdir(dirpath; sort=false)
-#         subpath = abspath(joinpath(dirpath, dirname))
-#         if isdir(subpath)
-#             m = match(RKTK_SEARCH_DIRECTORY_REGEX, dirname)
-#             if !isnothing(m)
-#                 order = parse(Int, m[1]; base=10)
-#                 stage = parse(Int, m[2]; base=10)
-#                 result[(order, stage)] = (subpath,
-#                     read_rktk_search_directory(subpath))
-#             end
-#         end
-#     end
-#     return result
-# end
-
-
-# function files_are_identical(path1::AbstractString, path2::AbstractString)
-#     @assert isfile(path1)
-#     @assert isfile(path2)
-#     if basename(path1) != basename(path2)
-#         return false
-#     end
-#     return open(path1, "r") do file1
-#         return open(path2, "r") do file2
-#             seekend(file1)
-#             seekend(file2)
-#             if position(file1) != position(file2)
-#                 return false
-#             end
-#             seekstart(file1)
-#             seekstart(file2)
-#             while !(eof(file1) || eof(file2))
-#                 chunk1 = read(file1, FILE_CHUNK_SIZE)
-#                 chunk2 = read(file2, FILE_CHUNK_SIZE)
-#                 if chunk1 != chunk2
-#                     return false
-#                 end
-#             end
-#             return eof(file1) && eof(file2)
-#         end
-#     end
-# end
-
-
-# function count_bits(n::Int)
-#     result = 0
-#     while !iszero(n)
-#         n >>>= 1
-#         result += 1
-#     end
-#     return result
-# end
-
-
-# function clean_floor(n::Int)
-#     num_bits = count_bits(n) - 1
-#     floor2 = 1 << num_bits
-#     floor3 = floor2 | (1 << (num_bits - 1))
-#     return ifelse(n >= floor3, floor3, floor2)
-# end

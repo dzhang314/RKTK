@@ -109,6 +109,8 @@ function search(
         @printf("Finished computing %s.\nPerformed %d L-BFGS iterations in %g seconds (%g iterations per second).\n",
             finalname, opt.iteration_count[], elapsed_time, opt.iteration_count[] / elapsed_time)
     end
+
+    return nothing
 end
 
 
@@ -134,6 +136,7 @@ function thread_work(
             search(seed, prefix, prob)
         end
     end
+    return nothing
 end
 
 
@@ -179,6 +182,8 @@ function main(
         @printf("In total, performed %d L-BFGS iterations in %g seconds (%g iterations per second).\n",
             TOTAL_ITERATION_COUNT[], elapsed_time, TOTAL_ITERATION_COUNT[] / elapsed_time)
     end
+
+    return nothing
 end
 
 
@@ -211,7 +216,7 @@ function parse_arguments()
         if typeof(e) in [
             ArgumentError, AssertionError, BoundsError, OverflowError
         ]
-            print(USAGE_STRING)
+            print(stderr, USAGE_STRING)
             exit(EXIT_INVALID_ARGS)
         else
             rethrow(e)

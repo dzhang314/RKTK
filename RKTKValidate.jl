@@ -29,72 +29,6 @@ const VERBOSE = get_flag!(["verbose"])
 const IGNORE = get_flag!(["ignore"])
 const DELETE_INCOMPLETE = get_flag!(["delete-incomplete"])
 const DELETE_INVALID = get_flag!(["delete-invalid"])
-
-
-function assert_rktk_file_valid(m::RegexMatch)
-    @assert m.regex == RKTK_FILENAME_REGEX
-
-    order = parse(Int, m[1]; base=10)
-    stages = parse(Int, m[2]; base=10)
-    mode = m[3]
-    residual_score = parse(Int, m[4]; base=10)
-    gradient_score = parse(Int, m[5]; base=10)
-    coeff_score = m[6] == "FAIL" ? -1 : parse(Int, m[6])
-    seed = parse(UInt64, m[7]; base=16)
-
-    T = get_type(mode)
-    param = get_parameterization(mode, stages)
-    prob = RKOCOptimizationProblem(
-        RKOCEvaluator{T}(order, param.num_stages),
-        RKCostL2{T}(), param)
-
-    blocks = split(read(m.match, String), "\n\n")
-    @assert length(blocks) == 3
-    @assert !startswith(blocks[1], '\n')
-    @assert !endswith(blocks[1], '\n')
-    @assert !startswith(blocks[2], '\n')
-    @assert !endswith(blocks[2], '\n')
-    @assert !startswith(blocks[3], '\n')
-    @assert endswith(blocks[3], '\n')
-
-    initial = parse_floats(T, blocks[1])
-    @assert initial == random_array(seed, T, param.num_variables)
-
-    table = split(strip(blocks[2], '\n'), '\n')
-    @assert length(table) >= 4
-    @assert table[1] == TABLE_HEADER
-    @assert table[2] == TABLE_SEPARATOR
-
-    table = ParsedRKTKTableRow.(table[3:end])
-    @assert issorted(row.iteration for row in table)
-    @assert issorted(row.cost_func for row in table; rev=true)
-    @assert all(!signbit(row.max_residual) for row in table)
-    @assert all(!signbit(row.rms_gradient) for row in table)
-    @assert all(!signbit(row.max_coeff) for row in table)
-    @assert all(!signbit(row.steplength) for row in table)
-
-    final = parse_floats(T, blocks[3])
-    @assert length(final) == param.num_variables
-
-    opt_initial = construct_optimizer(prob, initial)
-    initial_row = ParsedRKTKTableRow(compute_table_row(opt_initial))
-    opt_final = construct_optimizer(prob, final)
-    final_row = ParsedRKTKTableRow(compute_table_row(opt_final))
-    @assert full_match(initial_row, table[1])
-    @assert partial_match(final_row, table[end])
-
-    @assert compute_residual_score(opt_final) == residual_score
-    @assert compute_gradient_score(opt_final) == gradient_score
-    if coeff_score == -1
-        @assert compute_coeff_score(opt_final) <= 5000
-    else
-        @assert compute_coeff_score(opt_final) == coeff_score
-    end
-
-    return nothing
-end
-
-
 const VALID_FILE_COUNTER = Atomic{UInt64}(0)
 
 
@@ -170,7 +104,7 @@ end
 
 function main()
     if length(ARGS) != 0
-        println(stderr, USAGE_STRING)
+        print(stderr, USAGE_STRING)
         exit(EXIT_INVALID_ARGS)
     end
     start_time = time_ns()
@@ -179,6 +113,7 @@ function main()
     elapsed_time = (end_time - start_time) / 1.0e9
     @printf("Successfully validated %d RKTK files in %g seconds (%g files per second).\n",
         VALID_FILE_COUNTER[], elapsed_time, VALID_FILE_COUNTER[] / elapsed_time)
+    return nothing
 end
 
 
