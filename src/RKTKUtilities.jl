@@ -122,6 +122,7 @@ const FLOAT_TYPES = Dict(
     "M6" => Float64x6,
     "M7" => Float64x7,
     "M8" => Float64x8,
+    "A0" => BigFloat,
     "A1" => BigFloat,
     "A2" => BigFloat,
     "A3" => BigFloat,
@@ -134,6 +135,7 @@ const FLOAT_TYPES = Dict(
 
 
 const FLOAT_PRECISIONS = Dict(
+    "A0" => 256,
     "A1" => 512,
     "A2" => 1024,
     "A3" => 2048,
@@ -164,19 +166,19 @@ end
 function get_parameterization(mode::AbstractString, stages::Int)
     @assert is_valid_mode(mode)
     if mode[2] == 'E'
-        return RKParameterizationExplicit{FLOAT_TYPES[mode[3:4]]}(stages)
+        return RKParameterizationExplicit{get_type(mode)}(stages)
     elseif mode[2] == 'D'
-        return RKParameterizationDiagonallyImplicit{FLOAT_TYPES[mode[3:4]]}(stages)
+        return RKParameterizationDiagonallyImplicit{get_type(mode)}(stages)
     elseif mode[2] == 'I'
-        return RKParameterizationImplicit{FLOAT_TYPES[mode[3:4]]}(stages)
+        return RKParameterizationImplicit{get_type(mode)}(stages)
     elseif mode[2] == 'P'
-        return RKParameterizationParallelExplicit{FLOAT_TYPES[mode[3:4]]}(stages, 2)
+        return RKParameterizationParallelExplicit{get_type(mode)}(stages, 2)
     elseif mode[2] == 'Q'
-        return RKParameterizationParallelExplicit{FLOAT_TYPES[mode[3:4]]}(stages, 4)
+        return RKParameterizationParallelExplicit{get_type(mode)}(stages, 4)
     elseif mode[2] == 'R'
-        return RKParameterizationParallelExplicit{FLOAT_TYPES[mode[3:4]]}(stages, 8)
+        return RKParameterizationParallelExplicit{get_type(mode)}(stages, 8)
     elseif mode[2] == 'S'
-        return RKParameterizationParallelExplicit{FLOAT_TYPES[mode[3:4]]}(stages, 16)
+        return RKParameterizationParallelExplicit{get_type(mode)}(stages, 16)
     end
 end
 
