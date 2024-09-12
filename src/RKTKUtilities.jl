@@ -3,11 +3,13 @@ module RKTKUtilities
 
 using Base.Unicode: category_code, UTF8PROC_CATEGORY_PC, UTF8PROC_CATEGORY_PD
 using Dates: DateTime, datetime2unix
-using DZOptimization: LBFGSOptimizer, QuadraticLineSearch
+using DZOptimization: LBFGSOptimizer, QuadraticLineSearch, step!
 using DZOptimization.Kernels: norm2
 using DZOptimization.PCG: random_array
+using GenericLinearAlgebra: svd!
+using LinearAlgebra: svd!
 using MultiFloats
-using Printf
+using Printf: @sprintf
 using RungeKuttaToolKit
 using RungeKuttaToolKit.RKCost
 using RungeKuttaToolKit.RKParameterization
@@ -107,7 +109,7 @@ function files_are_identical(p::AbstractString, q::AbstractString)
 end
 
 
-################################################################################
+################################################################## MODE HANDLING
 
 
 export is_valid_mode, get_type, get_parameterization
@@ -183,7 +185,7 @@ function get_parameterization(mode::AbstractString, stages::Int)
 end
 
 
-################################################################################
+############################################################ OPTIMIZER UTILITIES
 
 
 export construct_optimizer, reset_occurred
@@ -215,8 +217,7 @@ function construct_optimizer(
     param::AbstractRKParameterization{T},
     x::AbstractVector{T},
 ) where {T}
-    n = length(x)
-    @assert n == param.num_variables
+    @assert param.num_variables == length(x)
     ev = RKOCEvaluator{T}(trees, param.num_stages)
     prob = RKOCOptimizationProblem(ev, RKCostL2{T}(), param)
     return construct_optimizer(prob, x)
@@ -230,7 +231,47 @@ function reset_occurred(opt::LBFGSOptimizer)
 end
 
 
-################################################################################
+##################################################################### REFINEMENT
+
+
+export refine_bigfloat
+
+
+function refine_bigfloat(
+    trees::AbstractVector{LevelSequence},
+    param::AbstractRKParameterization{BigFloat},
+    x::AbstractVector{T};
+    max_iterations::Integer=0,
+    precision::Integer=precision(BigFloat),
+) where {T}
+    @assert param.num_variables == length(x)
+    return setprecision(BigFloat, precision) do
+        ev = RKOCEvaluator{BigFloat}(trees, param.num_stages)
+        prob = RKOCOptimizationProblem(ev, RKCostL2{BigFloat}(), param)
+        opt = construct_optimizer(prob, BigFloat.(x))
+        if !signbit(max_iterations) && !iszero(max_iterations)
+            while !opt.has_terminated[]
+                step!(opt)
+                if opt.iteration_count[] > max_iterations
+                    break
+                end
+            end
+        else
+            while !opt.has_terminated[]
+                step!(opt)
+            end
+        end
+        param(prob.A, prob.b, opt.current_point)
+        max_residual = ev(RKCostLInfinity{BigFloat}(), prob.A, prob.b)
+        jacobian = Matrix{BigFloat}(undef, length(trees), param.num_variables)
+        ev'(jacobian, prob.A, prob.b, param, opt.current_point)
+        _, sigma, _ = svd!(jacobian)
+        return (opt.current_point, max_residual, sigma, opt.iteration_count[])
+    end
+end
+
+
+################################################ SCORING AND PROGRESS MONITORING
 
 
 export compute_max_residual, compute_rms_gradient, compute_max_coeff,

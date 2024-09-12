@@ -1,7 +1,6 @@
+using Base.Threads
 using DZOptimization
 using DZOptimization.PCG
-using GenericLinearAlgebra
-using LinearAlgebra
 using MultiFloats
 using Printf
 using RungeKuttaToolKit
@@ -13,7 +12,60 @@ push!(LOAD_PATH, joinpath(@__DIR__, "src"))
 using RKTKUtilities
 
 
+const WRITE_TERM = ((stdout isa Base.TTY || stdout isa Base.PipeEndpoint) &&
+                    (nthreads() == 1))
+const WRITE_FILE = !get_flag!(["no-file"])
+
+
+function fprintln(io::IO, args...)
+    @static if WRITE_TERM
+        println(stdout, args...)
+        flush(stdout)
+    end
+    @static if WRITE_FILE
+        println(io, args...)
+        flush(io)
+    end
+    return nothing
+end
+
+
+function fprint_error_coefficents(
+    io::IO,
+    param::AbstractRKParameterization{BigFloat},
+    x::AbstractVector{BigFloat},
+)
+    k = 0
+    for order = 1:99
+        trees = rooted_trees(order; tree_ordering=:butcher)
+        ev = RKOCEvaluator{BigFloat}(trees, param.num_stages)
+        residuals = ev(param(x)...)
+        count = 0
+        for (tree, residual) in zip(trees, residuals)
+            if abs(residual) < 1.0e-100
+                count += 1
+            end
+            fprintln(io, @sprintf("t_%d ", k += 1), tree.data, ": ",
+                @sprintf("%+.100f", residual / butcher_symmetry(tree)))
+        end
+        if count == length(trees)
+            fprintln(io, @sprintf(
+                "Satisfied all %d conditions for order %d.", count, order))
+        else
+            fprintln(io, @sprintf(
+                "Satisfied %d of %d conditions for order %d.",
+                count, length(trees), order))
+        end
+        fprintln(io)
+        if iszero(count)
+            break
+        end
+    end
+end
+
+
 function autosearch!(
+    io::IO,
     active_trees::AbstractVector{LevelSequence},
     x::AbstractVector{T},
     param::AbstractRKParameterization{T},
@@ -28,83 +80,204 @@ function autosearch!(
     @assert param.num_variables == param_big.num_variables
     @assert length(x) == param.num_variables
 
+    active_set = Set{LevelSequence}(active_trees)
     trees = [tree for tree in rooted_trees(order)
-             if maximum(tree.data) <= height_limit]
+             if (maximum(tree.data) <= height_limit) && !(tree in active_set)]
     while !isempty(trees)
 
         res_ev = RKOCEvaluator{T}(trees, param.num_stages)
         _, index = findmin(abs, res_ev(param(x)...))
-        println("Attempting to add tree: ", trees[index])
+        fprintln(io, "Attempting to add rooted tree: ", trees[index].data)
 
         trial_trees = push!(copy(active_trees), trees[index])
         trial_ev = RKOCEvaluator{T}(trial_trees, param.num_stages)
-        trial_opt = construct_optimizer(RKOCOptimizationProblem(
-                trial_ev, RKCostL2{T}(), param), x)
+        trial_prob = RKOCOptimizationProblem(trial_ev, RKCostL2{T}(), param)
+        trial_opt = construct_optimizer(trial_prob, x)
 
-        println(compute_table_row(trial_opt))
+        fprintln(io, TABLE_HEADER)
+        fprintln(io, TABLE_SEPARATOR)
+        fprintln(io, compute_table_row(trial_opt))
         while !trial_opt.has_terminated[]
             step!(trial_opt)
             if !(maximum(abs, trial_opt.current_point) < radius)
                 break
             end
-            if trial_opt.iteration_count[] % 5000 == 0
-                println(compute_table_row(trial_opt))
+            if (reset_occurred(trial_opt) ||
+                (trial_opt.iteration_count[] % 1000 == 0))
+                fprintln(io, compute_table_row(trial_opt))
             end
         end
-        println(compute_table_row(trial_opt))
+        fprintln(io, compute_table_row(trial_opt))
 
+        param(trial_prob.A, trial_prob.b, trial_opt.current_point)
         max_residual = trial_ev(RKCostLInfinity{T}(),
-            param(trial_opt.current_point)...)
+            trial_prob.A, trial_prob.b)
+
         if max_residual < epsilon
-            @printf("Succeeded with max residual: %.6e\n", max_residual)
+            fprintln(io, "Sucessfully added rooted tree: ", trees[index].data)
+            fprintln(io, @sprintf("Pre-refinement residual: %.6e",
+                max_residual))
             push!(active_trees, trees[index])
             deleteat!(trees, index)
 
-            ev_big = RKOCEvaluator{BigFloat}(
-                active_trees, param_big.num_stages)
-            prob_big = RKOCOptimizationProblem(
-                ev_big, RKCostL2{BigFloat}(), param_big)
-            opt_big = construct_optimizer(
-                prob_big, BigFloat.(trial_opt.current_point))
-            while !opt_big.has_terminated[]
-                step!(opt_big)
-            end
-
-            max_residual = ev_big(RKCostLInfinity{BigFloat}(),
-                param_big(opt_big.current_point)...)
-            @printf("Refined max residual: %.6e\n", max_residual)
+            x_big, max_residual, sigma, iter_count = refine_bigfloat(
+                active_trees, param_big, trial_opt.current_point)
             @assert max_residual < 1.0e-100
-            copy!(x, T.(opt_big.current_point))
+            if iszero(max_residual)
+                fprintln(io, "Successfully refined to exact accuracy.")
+            else
+                fprintln(io, @sprintf(
+                    "Successfully refined to %d-digit accuracy.",
+                    floor(Int, -log10(max_residual))))
+            end
+            fprintln(io, @sprintf("Refinement iteration count: %d",
+                iter_count))
+            copy!(x, T.(x_big))
 
-            _, s, _ = svd!(ev_big'(param_big, opt_big.current_point))
-            i = lastindex(s)
-            while i >= 1 && s[i] < 1.0e-100
+            i = lastindex(sigma)
+            while i >= 1 && sigma[i] < 1.0e-100
                 i -= 1
             end
             rank = i
-            if i == lastindex(s)
-                @printf("Estimated Jacobian rank: %d (singular value %.6e)\n",
-                    rank, s[i])
+            if i == lastindex(sigma)
+                fprintln(io, @sprintf("Estimated Jacobian rank: %d", rank))
+                fprintln(io, @sprintf("Singular value: %.100f", sigma[i]))
             else
-                @printf("Estimated Jacobian rank: %d (spectral gap %.6e)\n",
-                    rank, s[i] / s[i+1])
+                fprintln(io, @sprintf("Estimated Jacobian rank: %d", rank))
+                fprintln(io, @sprintf("Singular value: %.100f", sigma[i]))
+                fprintln(io, @sprintf("Spectral gap: %.6e",
+                    sigma[i] / sigma[i+1]))
             end
-            @printf("Constrained %d of %d variables.\n",
-                rank, param.num_variables)
+            fprintln(io, @sprintf("Constrained %d of %d variables.",
+                rank, param.num_variables))
+            fprintln(io)
 
             if rank >= param.num_variables
                 return true
             end
 
         else
-            println("Failed with max residual: ", max_residual)
+            fprintln(io, "Failed to add rooted tree: ", trees[index].data)
+            fprintln(io, @sprintf("Pre-refinement residual: %.6e",
+                max_residual))
+            fprintln(io)
             deleteat!(trees, index)
         end
-
-        flush(stdout)
     end
 
     return false
+end
+
+
+function seed_work(
+    seed::UInt64,
+    param::AbstractRKParameterization{T},
+    param_big::AbstractRKParameterization{BigFloat},
+    height_limit::Int,
+    epsilon::T,
+    radius::T,
+) where {T}
+
+    # TODO: Files need an indicator of being done.
+    # TODO: File names should indicate satisfied order conditions.
+    # TODO: A list of existing files should be built on startup.
+    filename = @sprintf("RKTK-IS-%02d-%02d-%016X.txt",
+        param.num_parallel_stages + 1,
+        param.parallel_width, seed)
+    if isfile(filename)
+        return nothing
+    end
+
+    io = open(filename, "w")
+    active_trees = LevelSequence[]
+    x = random_array(seed, T, param.num_variables)
+    for c in x
+        fprintln(io, @sprintf("%+.100f,", c))
+    end
+    fprintln(io)
+
+    order = 0
+    while true
+        order += 1
+
+        reached_full_rank = autosearch!(
+            io, active_trees, x, param, param_big,
+            order, height_limit, epsilon, radius)
+        if !reached_full_rank
+            reached_full_rank = autosearch!(
+                io, active_trees, x, param, param_big,
+                order, height_limit, epsilon, radius)
+        end
+
+        x_big, max_residual, sigma, iter_count = refine_bigfloat(
+            active_trees, param_big, x)
+        for c in x_big
+            fprintln(io, @sprintf("%+.100f,", c))
+        end
+
+        fprintln(io) ###########################################################
+
+        fprintln(io, "Processed all rooted trees of order: ", order)
+        fprintln(io, "Number of active rooted trees: ",
+            length(active_trees))
+        @assert max_residual < 1.0e-100
+        if iszero(max_residual)
+            fprintln(io, "Successfully refined to exact accuracy.")
+        else
+            fprintln(io, @sprintf(
+                "Successfully refined to %d-digit accuracy.",
+                floor(Int, -log10(max_residual))))
+        end
+        fprintln(io, @sprintf("Refinement iteration count: %d",
+            iter_count))
+        copy!(x, T.(x_big))
+
+        i = lastindex(sigma)
+        while i >= 1 && sigma[i] < 1.0e-100
+            i -= 1
+        end
+        rank = i
+        if i == lastindex(sigma)
+            fprintln(io, @sprintf("Estimated Jacobian rank: %d", rank))
+            fprintln(io, @sprintf("Singular value: %.100f", sigma[i]))
+        else
+            fprintln(io, @sprintf("Estimated Jacobian rank: %d", rank))
+            fprintln(io, @sprintf("Singular value: %.100f", sigma[i]))
+            fprintln(io, @sprintf("Spectral gap: %.6e",
+                sigma[i] / sigma[i+1]))
+        end
+        fprintln(io, @sprintf("Constrained %d of %d variables.",
+            rank, param.num_variables))
+
+        fprintln(io) ###########################################################
+
+        if reached_full_rank
+            fprint_error_coefficents(io, param_big, x_big)
+            break
+        end
+    end
+
+    close(io)
+    println("Finished computing ", filename, '.')
+    flush(stdout)
+end
+
+
+const SEED_COUNTER = Atomic{UInt64}(0)
+
+
+function thread_work(
+    param::AbstractRKParameterization{T},
+    param_big::AbstractRKParameterization{BigFloat},
+    height_limit::Int,
+    epsilon::T,
+    radius::T,
+) where {T}
+    while true
+        seed = atomic_add!(SEED_COUNTER, one(UInt64))
+        seed_work(seed, param, param_big, height_limit, epsilon, radius)
+    end
+    return nothing
 end
 
 
@@ -114,51 +287,16 @@ function main(
     height_limit::Int,
     epsilon::T,
     radius::T,
-    min_seed::UInt64,
 ) where {T}
-
-    for seed = min_seed:typemax(UInt64)
-
-        println("Seed: ", seed)
-        flush(stdout)
-        x = random_array(seed, T, param.num_variables)
-        active_trees = LevelSequence[]
-
-        for order = 1:99
-            reached_full_rank = autosearch!(
-                active_trees, x, param, param_big,
-                order, height_limit, epsilon, radius)
-
-            ev_big = RKOCEvaluator{BigFloat}(
-                active_trees, param_big.num_stages)
-            prob_big = RKOCOptimizationProblem(
-                ev_big, RKCostL2{BigFloat}(), param_big)
-            opt_big = construct_optimizer(prob_big, BigFloat.(x))
-            while !opt_big.has_terminated[]
-                step!(opt_big)
-            end
-            println('{')
-            for (i, c) in pairs(opt_big.current_point)
-                if i == lastindex(opt_big.current_point)
-                    @printf("    %+.100f\n", c)
-                else
-                    @printf("    %+.100f,\n", c)
-                end
-            end
-            println('}')
-            copy!(x, T.(opt_big.current_point))
-
-            trees = rooted_trees(order)
-            count = sum(tree in active_trees for tree in trees)
-            @printf("Method satisfies %d of %d conditions for order %d.\n",
-                count, length(trees), order)
-            if reached_full_rank
-                break
-            end
-        end
-
+    dirname = @sprintf("RKTK-IS-%02d-%02d",
+        param.num_parallel_stages + 1,
+        param.parallel_width)
+    if WRITE_FILE
+        ensuredir(dirname)
     end
-
+    @threads for _ = 1:nthreads()
+        thread_work(param, param_big, height_limit, epsilon, radius)
+    end
     return nothing
 end
 
@@ -167,6 +305,5 @@ setprecision(BigFloat, 512)
 main(
     RKParameterizationParallelExplicit{Float64x2}(parse(Int, ARGS[1]) - 1, parse(Int, ARGS[2])),
     RKParameterizationParallelExplicit{BigFloat}(parse(Int, ARGS[1]) - 1, parse(Int, ARGS[2])),
-    parse(Int, ARGS[1]), Float64x2(1.0e-20), Float64x2(100.0),
-    parse(UInt64, ARGS[3]),
+    parse(Int, ARGS[1]), Float64x2(1.0e-20), Float64x2(100.0)
 )
