@@ -210,6 +210,19 @@ function construct_optimizer(
 end
 
 
+function construct_optimizer(
+    trees::AbstractVector{LevelSequence},
+    param::AbstractRKParameterization{T},
+    x::AbstractVector{T},
+) where {T}
+    n = length(x)
+    @assert n == param.num_variables
+    ev = RKOCEvaluator{T}(trees, param.num_stages)
+    prob = RKOCOptimizationProblem(ev, RKCostL2{T}(), param)
+    return construct_optimizer(prob, x)
+end
+
+
 function reset_occurred(opt::LBFGSOptimizer)
     history_length = length(opt._rho)
     return ((opt.iteration_count[] >= history_length) &&
@@ -336,7 +349,7 @@ const RKTK_DIRECTORY_REGEX =
 ################################################################################
 
 
-export assert_rktk_file_valid
+export parse_floats, assert_rktk_file_valid
 
 
 function parse_floats(::Type{T}, data::AbstractString) where {T}
