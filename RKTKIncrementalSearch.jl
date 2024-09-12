@@ -102,6 +102,9 @@ function autosearch!(
             if !(maximum(abs, trial_opt.current_point) < radius)
                 break
             end
+            if trial_opt.iteration_count[] >= 10^6
+                break
+            end
             if (reset_occurred(trial_opt) ||
                 (trial_opt.iteration_count[] % 1000 == 0))
                 fprintln(io, compute_table_row(trial_opt))
@@ -212,7 +215,7 @@ function seed_work(
         x_big, max_residual, sigma, iter_count = refine_bigfloat(
             active_trees, param_big, x)
         for c in x_big
-            fprintln(io, @sprintf("%+.100f,", c))
+            fprintln(io, @sprintf("%+.100f", c))
         end
 
         fprintln(io) ###########################################################
@@ -263,9 +266,6 @@ function seed_work(
 end
 
 
-const SEED_COUNTER = Atomic{UInt64}(0)
-
-
 function thread_work(
     param::AbstractRKParameterization{T},
     param_big::AbstractRKParameterization{BigFloat},
@@ -274,8 +274,7 @@ function thread_work(
     radius::T,
 ) where {T}
     while true
-        seed = atomic_add!(SEED_COUNTER, one(UInt64))
-        seed_work(seed, param, param_big, height_limit, epsilon, radius)
+        seed_work(rand(UInt64), param, param_big, height_limit, epsilon, radius)
     end
     return nothing
 end
