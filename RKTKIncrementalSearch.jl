@@ -184,18 +184,21 @@ function seed_work(
     # TODO: Files need an indicator of being done.
     # TODO: File names should indicate satisfied order conditions.
     # TODO: A list of existing files should be built on startup.
+    tempname = @sprintf("RKTK-IS-%02d-%02d-%016X.temp",
+        param.num_parallel_stages + 1,
+        param.parallel_width, seed)
     filename = @sprintf("RKTK-IS-%02d-%02d-%016X.txt",
         param.num_parallel_stages + 1,
         param.parallel_width, seed)
-    if isfile(filename)
+    if isfile(tempname) || isfile(filename)
         return nothing
     end
 
-    io = open(filename, "w")
+    io = open(tempname, "w")
     active_trees = LevelSequence[]
     x = random_array(seed, T, param.num_variables)
     for c in x
-        fprintln(io, @sprintf("%+.100f,", c))
+        fprintln(io, @sprintf("%+.100f", c))
     end
     fprintln(io)
 
@@ -261,6 +264,7 @@ function seed_work(
     end
 
     close(io)
+    mv(tempname, filename)
     println("Finished computing ", filename, '.')
     flush(stdout)
 end
