@@ -206,13 +206,15 @@ function seed_work(
     while true
         order += 1
 
-        reached_full_rank = autosearch!(
-            io, active_trees, x, param, param_big,
-            order, height_limit, epsilon, radius)
-        if !reached_full_rank
+        while true
+            num_trees_old = length(active_trees)
             reached_full_rank = autosearch!(
                 io, active_trees, x, param, param_big,
                 order, height_limit, epsilon, radius)
+            num_trees_new = length(active_trees)
+            if reached_full_rank || (num_trees_old == num_trees_new)
+                break
+            end
         end
 
         x_big, max_residual, sigma, iter_count = refine_bigfloat(
@@ -306,7 +308,9 @@ end
 
 setprecision(BigFloat, 512)
 main(
-    RKParameterizationParallelExplicit{Float64x2}(parse(Int, ARGS[1]) - 1, parse(Int, ARGS[2])),
-    RKParameterizationParallelExplicit{BigFloat}(parse(Int, ARGS[1]) - 1, parse(Int, ARGS[2])),
+    RKParameterizationParallelExplicit{Float64x2}(
+        parse(Int, ARGS[1]) - 1, parse(Int, ARGS[2])),
+    RKParameterizationParallelExplicit{BigFloat}(
+        parse(Int, ARGS[1]) - 1, parse(Int, ARGS[2])),
     parse(Int, ARGS[1]), Float64x2(1.0e-20), Float64x2(100.0)
 )
