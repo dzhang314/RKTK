@@ -206,13 +206,14 @@ function seed_work(
     while true
         order += 1
 
+        done = false
         while true
             num_trees_old = length(active_trees)
-            reached_full_rank = autosearch!(
+            done |= autosearch!(
                 io, active_trees, x, param, param_big,
                 order, height_limit, epsilon, radius)
             num_trees_new = length(active_trees)
-            if reached_full_rank || (num_trees_old == num_trees_new)
+            if done || (num_trees_old == num_trees_new)
                 break
             end
         end
@@ -259,7 +260,7 @@ function seed_work(
 
         fprintln(io) ###########################################################
 
-        if reached_full_rank
+        if done
             fprint_error_coefficents(io, param_big, x_big)
             break
         end
