@@ -27,6 +27,7 @@ If two seeds are specified, they are treated as lower and upper bounds.
 const WRITE_TERM = ((stdout isa Base.TTY || stdout isa Base.PipeEndpoint) &&
                     (nthreads() == 1))
 const WRITE_FILE = !get_flag!(["no-file"])
+const USE_SIMD = get_flag!(["simd"])
 
 
 function fprintln(io::IO, args...)
@@ -124,9 +125,15 @@ function thread_work(
     param::AbstractRKParameterization{T},
     max_seed::UInt64,
 ) where {T}
-    prob = RKOCOptimizationProblem(
-        RKOCEvaluator{T}(order, param.num_stages),
-        RKCostL2{T}(), param)
+    @static if USE_SIMD
+        prob = RKOCOptimizationProblem(
+            RKOCEvaluatorSIMD{param.num_stages,T}(order),
+            RKCostL2{T}(), param)
+    else
+        prob = RKOCOptimizationProblem(
+            RKOCEvaluator{T}(order, param.num_stages),
+            RKCostL2{T}(), param)
+    end
     while true
         seed = atomic_add!(SEED_COUNTER, one(UInt64))
         if seed > max_seed
