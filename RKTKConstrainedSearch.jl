@@ -32,6 +32,7 @@ const EXIT_INVALID_ARGS = 1
 
 
 const VERBOSE = (stdout isa Base.TTY)
+const TOTAL_ITERATION_COUNT = Atomic{Int}(0)
 
 
 function constrained_search(
@@ -64,6 +65,7 @@ function constrained_search(
         @threads :dynamic for i = 1:length(optimizers)
             if !terminated[i]
                 result = optimizers[i]()
+                atomic_add!(TOTAL_ITERATION_COUNT, 1)
                 if any(isnan, optimizers[i].A) ||
                    any(isnan, optimizers[i].b) ||
                    any(isnan, optimizers[i].joint_residual)
@@ -129,6 +131,7 @@ function main(
     uuid = uuid4()
 
     active_trees = all_rooted_trees(3)
+    start = time_ns()
 
     for order = 4:99
         candidate_trees = rooted_trees(order)
@@ -138,6 +141,7 @@ function main(
                 active_trees, candidate_trees, param, x, 1.0e-10, 100.0)
             if isempty(finished)
                 disable_sigint() do
+                    elapsed = (time_ns() - start) / 1.0e9
                     @printf("\nSatisfied all conditions for order %d.\n",
                         order - 1)
                     @printf("Satisfied %d of %d conditions for order %d.\n\n",
@@ -162,6 +166,13 @@ function main(
                             end
                         end
                     end
+                    @printf(
+                        """
+                        Executed %d IPOPT iterations in %.3f seconds \
+                        (%.3f iterations per second).\n
+                        """,
+                        TOTAL_ITERATION_COUNT[], elapsed,
+                        TOTAL_ITERATION_COUNT[] / elapsed)
                 end
                 return nothing
             end
@@ -175,6 +186,7 @@ function main(
             deleteat!(candidate_trees, i)
         end
         disable_sigint() do
+            elapsed = (time_ns() - start) / 1.0e9
             write_rk_method(stdout, param(x)...)
             println()
             filename = @sprintf("RKTK-CS-%02d-%02d-%s-%02d.txt",
@@ -185,6 +197,13 @@ function main(
                     "\nThis method satisfies all conditions for order %d.\n",
                     order)
             end
+            @printf(
+                """
+                Executed %d IPOPT iterations in %.3f seconds \
+                (%.3f iterations per second).\n
+                """,
+                TOTAL_ITERATION_COUNT[], elapsed,
+                TOTAL_ITERATION_COUNT[] / elapsed)
         end
     end
 end
